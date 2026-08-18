@@ -1,3 +1,6 @@
+// пустой ввод для слотов, от которых пока ничего не пришло
+const IDLE_INPUT = { m: 0, a: -0.8, c: false, tx: null, p: null, j: false };
+
 const MODE = {
   menu: 'menu',
   map: 'map',
@@ -16,7 +19,7 @@ function difficultyFor(wave, playerCount) {
     attackMul: 1 + (wave - 1) * 0.08,
     hpBonus: Math.floor((wave - 1) / 4),
     spawnInterval: clamp(1.5 - (wave - 1) * 0.09, 0.32, 1.5),
-    count: Math.round((4 + wave * 2) * (playerCount > 1 ? 1.6 : 1)),
+    count: Math.round((4 + wave * 2) * (1 + (playerCount - 1) * 0.45)),
     stars: clamp(1 + Math.floor((wave - 1) / 2), 1, 5),
   };
 }
@@ -102,17 +105,20 @@ class Game {
 
     this.role = 'solo';
     this.localIndex = 0;
-    this.remoteInput = { m: 0, a: -0.8, c: false, tx: null, p: null, j: false };
+    this.remoteInputs = [];
     this.events = [];
     this.newTexts = [];
     this.snapshotTimer = 0;
+    this.aliveTimer = 1;
     this.inputTimer = 0;
     this.nextId = 1;
     this.net = new Net({
       onStatus: (status, text) => this.onNetStatus(status, text),
       onInvite: (invite) => this.onNetInvite(invite),
-      onOpen: (role) => this.onNetOpen(role),
-      onData: (data) => this.onNetData(data),
+      onOpen: (role, slot) => this.onNetOpen(role, slot),
+      onData: (data, slot) => this.onNetData(data, slot),
+      onGuestJoin: (slot) => this.onGuestJoin(slot),
+      onGuestLeave: (slot) => this.onGuestLeave(slot),
       onClose: () => this.onNetClose(),
     });
 
@@ -165,6 +171,10 @@ class Game {
 
   get modifier() {
     return this.level ? this.level.garden.modifier : null;
+  }
+
+  get activePlayers() {
+    return this.players.filter((player) => player.active);
   }
 
   get localPlayer() {
@@ -226,6 +236,55 @@ class Game {
     this.inviteValue.value = invite;
     this.inviteBox.classList.remove('hidden');
     this.inviteValue.select();
+    // хост начинает партию сразу и не ждёт гостей: они подсаживаются на ходу
+    this.role = 'host';
+    this.localIndex = 0;
+    this.startGame();
+  }
+
+  onGuestJoin(slot) {
+    const player = this.ensurePlayer(slot);
+    this.rescaleDifficulty();
+    this.say(player.x, player.y - 130, t('fx.joined', { name: player.name }), player.color, 24);
+    this.fx('pickup', player.x, player.y - 40, player.color);
+  }
+
+  onGuestLeave(slot) {
+    const player = this.players[slot];
+    if (!player) {
+      return;
+    }
+    player.active = false;
+    player.charging = false;
+    this.rescaleDifficulty();
+    this.say(player.x, player.y - 130, t('fx.leftGame', { name: player.name }), '#b0a7d6', 22);
+  }
+
+  // подключился ещё один — врагов должно стать больше уже в текущей волне
+  rescaleDifficulty() {
+    if (this.level) {
+      return;
+    }
+    const before = this.difficulty.count;
+    this.difficulty = difficultyFor(this.wave, this.activePlayers.length);
+    const extra = this.difficulty.count - before;
+    for (let i = 0; i < extra; i++) {
+      this.queue.push({ type: pick(buildWave(this.wave, this.difficulty)).type, hunted: false });
+    }
+  }
+
+  // игрок появляется в бою в момент подключения, а не с начала волны
+  ensurePlayer(slot) {
+    while (this.players.length <= slot) {
+      const player = new Player(this.players.length);
+      this.applyPerks(player);
+      this.players.push(player);
+    }
+    const player = this.players[slot];
+    player.active = true;
+    player.hp = Math.max(player.hp, 2);
+    player.invuln = CONFIG.invulnTime;
+    return player;
   }
 
   copyInvite() {
@@ -239,12 +298,9 @@ class Game {
     this.onNetStatus('waiting', t('net.copyManual'));
   }
 
-  onNetOpen(role) {
+  onNetOpen(role, slot) {
     this.role = role;
-    this.localIndex = role === 'host' ? 0 : 1;
-    if (role === 'host') {
-      this.startGame();
-    }
+    this.localIndex = role === 'host' ? 0 : slot;
     this.inviteBox.classList.add('hidden');
     this.lobby.classList.add('hidden');
   }
@@ -258,9 +314,9 @@ class Game {
     this.lobby.classList.remove('hidden');
   }
 
-  onNetData(data) {
+  onNetData(data, slot) {
     if (data.t === 'i' && this.role === 'host') {
-      this.remoteInput = { m: data.m, a: data.a, c: data.c, tx: data.tx, p: data.p, j: Boolean(data.j) };
+      this.remoteInputs[slot] = { m: data.m, a: data.a, c: data.c, tx: data.tx, p: data.p, j: Boolean(data.j) };
       return;
     }
     if (data.t === 's' && this.role === 'guest') {
@@ -411,8 +467,13 @@ class Game {
     this.reset();
     this.role = role;
     this.localIndex = localIndex;
-    if (role !== 'solo') {
-      this.players.push(new Player(1));
+    // хост держит слоты для уже подключённых гостей
+    if (role === 'host') {
+      for (const guest of this.net.openGuests) {
+        while (this.players.length <= guest.slot) {
+          this.players.push(new Player(this.players.length));
+        }
+      }
     }
     for (const player of this.players) {
       this.applyPerks(player);
@@ -768,7 +829,7 @@ class Game {
 
   // враг целится в ближайшего живого игрока
   aliveTarget(enemy) {
-    const alive = this.players.filter((p) => p.alive);
+    const alive = this.players.filter((p) => p.active && p.alive);
     if (alive.length === 0) {
       return this.players[0];
     }
@@ -962,7 +1023,7 @@ class Game {
       player.hp = 0;
       player.charging = false;
       this.say(x, y - 70, t('fx.down', { name: player.name }), '#ff4d6d', 24);
-      if (this.players.every((p) => !p.alive)) {
+      if (this.activePlayers.every((p) => !p.alive)) {
         this.endGame();
       }
     }
@@ -1051,7 +1112,7 @@ class Game {
 
   nextWave() {
     this.wave += 1;
-    this.difficulty = difficultyFor(this.wave, this.players.length);
+    this.difficulty = difficultyFor(this.wave, this.activePlayers.length);
     // в бесконечном режиме каждая волна — новый сад и новое время суток
     const garden = GARDENS[(this.wave - 1) % GARDENS.length];
     this.palette = tintedPalette(garden.palette, phaseFor(this.wave - 1));
@@ -1064,7 +1125,7 @@ class Game {
     this.fx('wave', CONFIG.width / 2, 200);
 
     // выбывший напарник возвращается в строй на новой волне
-    for (const player of this.players) {
+    for (const player of this.activePlayers) {
       if (!player.alive) {
         player.hp = 2;
         player.invuln = CONFIG.invulnTime;
@@ -1199,10 +1260,14 @@ class Game {
     }
     const slowDt = dt * this.slowFactor;
 
-    this.updatePlayer(this.players[0], this.localIndex === 0 ? this.consumeInput() : this.remoteInput, dt);
-    if (this.players[1]) {
-      this.updatePlayer(this.players[1], this.localIndex === 1 ? this.consumeInput() : this.remoteInput, dt);
-    }
+    // свой игрок берёт локальный ввод, остальные — присланный по сети
+    this.players.forEach((player, i) => {
+      if (!player.active) {
+        return;
+      }
+      const input = i === this.localIndex ? this.consumeInput() : (this.remoteInputs[i] || IDLE_INPUT);
+      this.updatePlayer(player, input, dt);
+    });
 
     // ливень гоняет ветер туда-сюда прямо посреди уровня
     if (this.modifier === 'rain') {
@@ -1248,7 +1313,7 @@ class Game {
       }
       if (enemy.mode === 'dive') {
         for (const player of this.players) {
-          if (player.alive && circlesHit(enemy.x, enemy.y, enemy.r * 0.85, player.x, player.y - 40, player.r)) {
+          if (player.active && player.alive && circlesHit(enemy.x, enemy.y, enemy.r * 0.85, player.x, player.y - 40, player.r)) {
             this.damagePlayer(player, player.x, player.y - 40);
             this.burst(enemy.x, enemy.y, enemy.type.tint, 22);
             enemy.dead = true;
@@ -1299,7 +1364,7 @@ class Game {
     for (const hazard of this.hazards) {
       hazard.update(slowDt, this.wind);
       for (const player of this.players) {
-        if (hazard.dead || !player.alive) {
+        if (hazard.dead || !player.active || !player.alive) {
           continue;
         }
         if (!circlesHit(hazard.x, hazard.y, hazard.r, player.x, player.y - 40, player.r)) {
@@ -1323,7 +1388,7 @@ class Game {
     for (const pickup of this.pickups) {
       pickup.update(dt, this.wind);
       for (const player of this.players) {
-        if (pickup.dead || !player.alive) {
+        if (pickup.dead || !player.active || !player.alive) {
           continue;
         }
         if (circlesHit(pickup.x, pickup.y, pickup.r, player.x, player.y - 40, player.r + this.perks.pickupRadius)) {
@@ -1335,7 +1400,7 @@ class Game {
 
     // герой пугается того, что летит ему на голову, и звереет на длинном комбо
     for (const player of this.players) {
-      if (!player.alive) {
+      if (!player.active || !player.alive) {
         continue;
       }
       let danger = this.enemies.some((enemy) => enemy.mode === 'dive'
@@ -1361,13 +1426,18 @@ class Game {
         this.snapshotTimer = 0.05;
         this.sendSnapshot();
       }
+      this.aliveTimer -= dt;
+      if (this.aliveTimer <= 0) {
+        this.aliveTimer = 1;
+        this.net.checkAlive();
+      }
     }
   }
 
   // ---------- сетевой обмен ----------
 
   sendSnapshot() {
-    this.net.send({
+    this.net.broadcast({
       t: 's',
       ly: CONFIG.layout,
       m: this.mode,
@@ -1386,7 +1456,7 @@ class Game {
       p: this.players.map((p) => [
         Math.round(p.x), round1(p.aim), p.charging ? 1 : 0, round1(p.charge), p.hp,
         p.shield ? 1 : 0, round1(p.slip), round1(p.invuln), p.facing, round1(p.bob),
-        p.weapon.key, p.ammo, p.level, p.maxHp, Math.round(p.y), p.faceMood(), round1(p.throwAnim),
+        p.weapon.key, p.ammo, p.level, p.maxHp, Math.round(p.y), p.faceMood(), round1(p.throwAnim), p.active ? 1 : 0,
       ]),
       e: this.enemies.map((e) => [e.id, e.type.key, Math.round(e.x), Math.round(e.y), e.hp, e.maxHp, round1(e.t), e.mode, e.shieldOn ? 1 : 0]),
       s: this.shots.map((s) => [s.id, s.weapon.key, Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy)]),
@@ -1435,6 +1505,7 @@ class Game {
       p.ammo = row[11];
       p.level = row[12];
       p.maxHp = row[13];
+      p.active = row[17] === undefined ? true : Boolean(row[17]);
       p.ty = row[14];
       // мимику присылает хост: у себя лицо считаем локально, чтобы не было задержки
       if (i !== this.localIndex) {
@@ -1856,17 +1927,20 @@ class Game {
     ctx.fillStyle = 'rgba(255,243,214,.7)';
     ctx.fillText(t('ui.best', { n: formatScore(this.best) }), 24, 54);
 
-    this.players.forEach((player, i) => {
-      const y = 96 + i * 30;
-      if (this.players.length > 1) {
+    const roster = this.activePlayers;
+    const rowStep = roster.length > 2 ? 24 : 30;
+    roster.forEach((player, i) => {
+      const y = 96 + i * rowStep;
+      if (roster.length > 1) {
         ctx.font = '700 14px "Segoe UI", system-ui, sans-serif';
         ctx.fillStyle = player.color;
         ctx.textBaseline = 'middle';
         ctx.fillText(player.name, 24, y);
       }
-      const offset = this.players.length > 1 ? 52 : 36;
+      const offset = roster.length > 1 ? 52 : 36;
+      const heart = roster.length > 2 ? 17 : 21;
       for (let h = 0; h < player.maxHp; h++) {
-        drawEmoji(ctx, h < player.hp ? '❤️' : '🖤', offset + h * 26, y, 21);
+        drawEmoji(ctx, h < player.hp ? '❤️' : '🖤', offset + h * (heart + 4), y, heart);
       }
     });
 
@@ -1932,7 +2006,7 @@ class Game {
     ctx.textBaseline = 'middle';
     ctx.font = '600 16px "Segoe UI", system-ui, sans-serif';
     effects.forEach((effect, i) => {
-      const y = 96 + this.players.length * 30 + i * 28;
+      const y = 96 + roster.length * rowStep + i * 28;
       drawEmoji(ctx, effect.emoji, 36, y, 22);
       ctx.fillStyle = PALETTE.hud;
       ctx.fillText(effect.text, 54, y + 1);
@@ -2337,8 +2411,8 @@ class Game {
 
     this.drawTrajectory(ctx);
     this.drawPull(ctx);
-    for (const player of this.players) {
-      player.draw(ctx, this.players.length > 1);
+    for (const player of this.activePlayers) {
+      player.draw(ctx, this.activePlayers.length > 1);
     }
 
     for (const t of this.texts) {

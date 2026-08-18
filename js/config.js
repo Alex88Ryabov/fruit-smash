@@ -53,6 +53,10 @@ const CONFIG = {
   slowFactor: 0.42,
   bombDamage: 4,
   minPull: 14,
+  maxPlayers: 4,
+  // не пускать второго игрока с того же публичного IP: закрывает вход по своей же ссылке,
+  // но заодно запрещает играть вдвоём из одной квартиры — поставь false, если это нужно
+  blockSameNetwork: true,
 };
 
 function applyLayout(name) {

@@ -643,14 +643,24 @@ function inked(ctx, path, fill, width = 3) {
   ctx.stroke();
 }
 
+// четыре набора цветов: игроков в комнате может быть до четырёх
+const PLAYER_SKINS = [
+  { shirt: '#4ecdc4', hair: '#7a4a24', hairLight: '#a06a34' },
+  { shirt: '#ff8fb1', hair: '#b0702c', hairLight: '#d09045' },
+  { shirt: '#ffd166', hair: '#4a2c14', hairLight: '#6b4226' },
+  { shirt: '#a98bdc', hair: '#8a3a1e', hairLight: '#b05a34' },
+];
+
 class Player {
   constructor(index = 0) {
+    const skin = PLAYER_SKINS[index % PLAYER_SKINS.length];
     this.index = index;
-    this.color = index === 0 ? '#4ecdc4' : '#ffa8c5';
-    this.hair = index === 0 ? '#6b4226' : '#b0702c';
-    this.hairLight = index === 0 ? '#8b5a34' : '#d09045';
+    this.color = skin.shirt;
+    this.hair = skin.hair;
+    this.hairLight = skin.hairLight;
     this.name = 'P' + (index + 1);
-    this.x = CONFIG.width / 2 + (index === 0 ? -60 : 60);
+    this.active = true;
+    this.x = clamp(CONFIG.width / 2 + [0, 90, -90, 180][index % 4], 60, CONFIG.width - 60);
     this.y = CONFIG.groundY;
     this.r = CONFIG.playerRadius;
     this.aim = -Math.PI / 4;
