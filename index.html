@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>ФРУКТОЛЁТ — сбивай летающие фрукты</title>
+  <meta name="theme-color" content="#3b2f7a">
+  <meta name="description" content="Сбивай летающие фрукты: 60 уровней, прокачка и кооп на двоих.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" href="icons/icon-192.png">
+</head>
+<body>
+  <main class="wrap">
+    <canvas id="game" width="960" height="600"></canvas>
+
+    <div id="lobby" class="lobby">
+      <button id="btn-invite" class="primary" data-i18n="dom.invite">Пригласить друга</button>
+      <span class="sep" data-i18n="dom.or">или</span>
+      <input id="join-input" data-i18n-placeholder="dom.joinPlaceholder" placeholder="вставь приглашение" autocomplete="off" spellcheck="false">
+      <button id="btn-join" data-i18n="dom.join">Войти</button>
+
+      <div id="invite-box" class="invite hidden">
+        <input id="invite-value" readonly spellcheck="false">
+        <button id="btn-copy" data-i18n="dom.copy">Копировать</button>
+        <button id="btn-cancel" data-i18n="dom.cancel">Отменить</button>
+      </div>
+
+      <p id="net-status" data-status="offline" data-i18n="dom.netIdle">Кооп на двоих — только по приглашению</p>
+    </div>
+
+    <p class="hint">
+      <span data-i18n="dom.hintTouch"></span>
+      <br>
+      <span data-i18n="dom.hintMouse"></span>
+      <br>
+      <span data-i18n="dom.hintBonus"></span>
+    </p>
+  </main>
+
+  <script src="js/vendor/peerjs.min.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/campaign.js"></script>
+  <script src="js/save.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/entities.js"></script>
+  <script src="js/game.js"></script>
+  <script>
+    // офлайн-режим включается только на сайте: из file:// service worker не регистрируется
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
+</body>
+</html>

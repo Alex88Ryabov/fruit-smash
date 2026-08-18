@@ -1,0 +1,139 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: radial-gradient(circle at 50% 0%, #2a2350 0%, #120f25 60%, #0a0817 100%);
+  color: #e8e4ff;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.wrap {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+/* конкретные width и aspect-ratio проставляет resize() — кадр меняется вместе с ориентацией */
+canvas {
+  width: min(100%, 1160px);
+  max-width: 100%;
+  aspect-ratio: 960 / 600;
+  height: auto;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .08);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.lobby {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.lobby.hidden {
+  display: none;
+}
+
+.lobby button {
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .07);
+  color: #e8e4ff;
+  font: 600 14px "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.lobby button:hover {
+  background: rgba(255, 255, 255, .14);
+}
+
+.lobby button.primary {
+  background: #4ecdc4;
+  border-color: #4ecdc4;
+  color: #10202a;
+}
+
+.lobby button.primary:hover {
+  background: #6fded6;
+}
+
+.invite {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+}
+
+.invite.hidden { display: none; }
+
+#invite-value {
+  width: min(320px, 60vw);
+  color: #8ef6c5;
+  letter-spacing: 1px;
+  font-size: 13px;
+}
+
+#join-input {
+  width: 190px;
+  letter-spacing: 1px;
+  font-size: 13px;
+}
+
+.lobby input {
+  width: 76px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .3);
+  color: #ffd166;
+  font: 700 16px "Segoe UI", system-ui, sans-serif;
+  letter-spacing: 2px;
+  text-align: center;
+}
+
+.lobby .sep {
+  opacity: .5;
+  font-size: 13px;
+}
+
+#net-status {
+  width: 100%;
+  margin: 2px 0 0;
+  text-align: center;
+  font-size: 13px;
+  opacity: .75;
+}
+
+#net-status[data-status="online"] { color: #8ef6c5; opacity: 1; }
+#net-status[data-status="waiting"] { color: #ffd166; opacity: 1; }
+#net-status[data-status="error"] { color: #ff6b8a; opacity: 1; }
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  opacity: .6;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.hint b {
+  color: #ffd166;
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .hint { font-size: 11px; }
+  .lobby button, .lobby input { font-size: 13px; padding: 7px 12px; }
+}
