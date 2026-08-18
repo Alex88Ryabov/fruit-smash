@@ -251,7 +251,7 @@ class Game {
     const player = this.ensurePlayer(slot);
     this.rescaleDifficulty();
     this.say(player.x, player.y - 130, t('fx.joined', { name: player.name }), player.color, 24);
-    this.fx('pickup', player.x, player.y - 40, player.color);
+    this.fx('join', player.x, player.y - 40, player.color);
   }
 
   onGuestLeave(slot) {
@@ -263,6 +263,7 @@ class Game {
     player.charging = false;
     this.rescaleDifficulty();
     this.say(player.x, player.y - 130, t('fx.leftGame', { name: player.name }), '#b0a7d6', 22);
+    this.fx('leave', player.x, player.y - 40);
   }
 
   // подключился ещё один — врагов должно стать больше уже в текущей волне
@@ -308,9 +309,13 @@ class Game {
     this.localIndex = role === 'host' ? 0 : slot;
     this.inviteBox.classList.add('hidden');
     this.lobby.classList.add('hidden');
+    // звук подключения гость услышит из события хоста, дважды играть не надо
   }
 
   onNetClose() {
+    if (this.role !== 'solo') {
+      this.sound.playerLeave();
+    }
     if (this.role === 'guest') {
       this.reset();
     }
@@ -960,6 +965,14 @@ class Game {
         break;
       case 'jump':
         this.sound.jump();
+        break;
+      case 'join':
+        this.sound.playerJoin();
+        this.burst(x, y, color, 18);
+        break;
+      case 'leave':
+        this.sound.playerLeave();
+        this.burst(x, y, '#b0a7d6', 12);
         break;
       case 'pit':
         this.sound.pit();
@@ -2137,6 +2150,7 @@ class Game {
     });
     this.text(ctx, t('ui.coopHint'), w / 2, h * 0.87, { size: 15, weight: 600, color: '#8ef6c5' });
     this.drawLangSwitch(ctx, w / 2, h * 0.94);
+    this.text(ctx, 'v' + GAME_VERSION, w - 14, h - 14, { size: 12, weight: 600, align: 'right', color: 'rgba(255,243,214,.45)' });
   }
 
   drawMapScreen(ctx) {

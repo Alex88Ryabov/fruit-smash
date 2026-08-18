@@ -1,5 +1,6 @@
-// офлайн-кэш: игра целиком складывается в один кэш и дальше работает без сети
-const CACHE = 'fruktolet-v1';
+// офлайн-кэш. Стратегия «сначала сеть»: пока интернет есть, игрок всегда получает
+// свежие файлы, а кэш выручает только офлайн. Кэш-первым нельзя — обновления не доезжают.
+const CACHE = 'fruktolet-v2';
 const FILES = [
   './',
   './index.html',
@@ -33,17 +34,19 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') {
+  const request = event.request;
+  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) {
     return;
   }
   event.respondWith(
-    caches.match(event.request).then((hit) => hit || fetch(event.request).then((response) => {
-      // всё своё складываем в кэш, чужое (брокер PeerJS) просто пропускаем
-      if (response.ok && new URL(event.request.url).origin === self.location.origin) {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-      }
-      return response;
-    })),
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request).then((hit) => hit || caches.match('./index.html'))),
   );
 });

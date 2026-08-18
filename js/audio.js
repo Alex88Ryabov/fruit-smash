@@ -100,6 +100,18 @@ class SoundBox {
     this.noise({ dur: 0.1, gain: 0.12, cutoff: 5000, sweepTo: 2000 });
   }
 
+  playerJoin() {
+    [523, 659, 880, 1047].forEach((f, i) => {
+      this.tone({ freq: f, toFreq: f, type: 'triangle', dur: 0.16, gain: 0.2, delay: i * 0.08 });
+    });
+  }
+
+  playerLeave() {
+    [784, 587, 392].forEach((f, i) => {
+      this.tone({ freq: f, toFreq: f, type: 'triangle', dur: 0.18, gain: 0.18, delay: i * 0.09 });
+    });
+  }
+
   jump() {
     this.tone({ freq: 320, toFreq: 620, type: 'square', dur: 0.12, gain: 0.1 });
   }
