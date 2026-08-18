@@ -220,11 +220,16 @@ class Game {
       }
     });
 
-    // ссылку с приглашением можно просто открыть — подключаемся сразу
-    const fromLink = location.hash.match(/r=([a-z0-9]+)/i);
-    if (fromLink) {
-      this.net.join(fromLink[1]);
-    }
+    // ссылку с приглашением можно просто открыть — подключаемся сразу.
+    // hashchange нужен на случай, когда игра уже открыта и ссылку вставили в адрес
+    const joinFromHash = () => {
+      const fromLink = location.hash.match(/r=([a-z0-9]+)/i);
+      if (fromLink && this.net.role === 'solo') {
+        this.net.join(fromLink[1]);
+      }
+    };
+    window.addEventListener('hashchange', joinFromHash);
+    joinFromHash();
   }
 
   onNetStatus(status, text) {
