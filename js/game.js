@@ -211,6 +211,8 @@ class Game {
     document.getElementById('btn-cancel').addEventListener('click', () => {
       this.net.close();
       this.inviteBox.classList.add('hidden');
+      this.role = 'solo';
+      this.localIndex = 0;
       this.onNetStatus('offline', t('net.cancelled'));
     });
     joinInput.addEventListener('keydown', (e) => {
@@ -241,13 +243,16 @@ class Game {
     this.inviteValue.value = invite;
     this.inviteBox.classList.remove('hidden');
     this.inviteValue.select();
-    // хост начинает партию сразу и не ждёт гостей: они подсаживаются на ходу
+    // комната открыта, но партия ждёт: сначала ссылку надо скопировать и отправить другу
     this.role = 'host';
     this.localIndex = 0;
-    this.startGame();
   }
 
   onGuestJoin(slot) {
+    // первый гость запускает партию, следующие подсаживаются в идущую волну
+    if (this.mode !== MODE.playing && this.mode !== MODE.banner) {
+      this.startGame();
+    }
     const player = this.ensurePlayer(slot);
     this.rescaleDifficulty();
     this.say(player.x, player.y - 130, t('fx.joined', { name: player.name }), player.color, 24);
@@ -1329,13 +1334,25 @@ class Game {
           }
         }
       }
-      if (enemy.mode === 'dive') {
-        for (const player of this.players) {
-          if (player.active && player.alive && circlesHit(enemy.x, enemy.y, enemy.r * 0.85, player.x, player.y - 40, player.r)) {
-            this.damagePlayer(player, player.x, player.y - 40);
-            this.burst(enemy.x, enemy.y, enemy.type.tint, 22);
-            enemy.dead = true;
-          }
+      for (const player of this.players) {
+        if (enemy.mode !== 'dive' || enemy.dead || !player.active || !player.alive) {
+          continue;
+        }
+        if (!circlesHit(enemy.x, enemy.y, enemy.r * 0.85, player.x, player.y - 40, player.r)) {
+          continue;
+        }
+        this.damagePlayer(player, player.x, player.y - 40);
+        // босс о героя не разбивается: таран стоит ему одной жизни, как попадание, и он уходит наверх
+        if (!enemy.isBoss) {
+          this.burst(enemy.x, enemy.y, enemy.type.tint, 22);
+          enemy.dead = true;
+          continue;
+        }
+        if (enemy.hit(1) === 'killed') {
+          this.killEnemy(enemy);
+        } else {
+          this.fx('hit', enemy.x, enemy.y);
+          enemy.mode = 'recover';
         }
       }
     }
