@@ -105,6 +105,8 @@ class Game {
 
     this.role = 'solo';
     this.localIndex = 0;
+    this.netStatus = 'offline';
+    this.netMessage = '';
     this.remoteInputs = [];
     this.events = [];
     this.newTexts = [];
@@ -208,13 +210,15 @@ class Game {
       this.net.join(joinInput.value);
     });
     document.getElementById('btn-copy').addEventListener('click', () => this.copyInvite());
-    document.getElementById('btn-cancel').addEventListener('click', () => {
-      this.net.close();
-      this.inviteBox.classList.add('hidden');
-      this.role = 'solo';
-      this.localIndex = 0;
-      this.onNetStatus('offline', t('net.cancelled'));
-    });
+    document.getElementById('btn-cancel').addEventListener('click', () => this.leaveCoop(t('net.cancelled')));
+
+    // системное «поделиться» есть на телефоне и по https, на остальном остаётся копирование
+    const shareBtn = document.getElementById('btn-share');
+    if (navigator.share) {
+      shareBtn.addEventListener('click', () => this.shareInvite());
+    } else {
+      shareBtn.classList.add('hidden');
+    }
     joinInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') {
@@ -235,6 +239,8 @@ class Game {
   }
 
   onNetStatus(status, text) {
+    this.netStatus = status;
+    this.netMessage = text;
     this.lobbyStatus.textContent = text;
     this.lobbyStatus.dataset.status = status;
   }
@@ -307,6 +313,28 @@ class Game {
     }
     // из file:// буфер обмена недоступен, остаётся выделить текст
     this.onNetStatus('waiting', t('net.copyManual'));
+  }
+
+  shareInvite() {
+    navigator.share({ text: t('net.shareText'), url: this.inviteValue.value })
+      .then(() => this.onNetStatus('waiting', t('net.shared')), () => {});
+  }
+
+  // возврат в обычное меню: комната закрывается, роль снова одиночная
+  leaveCoop(text) {
+    this.net.close();
+    this.inviteBox.classList.add('hidden');
+    this.role = 'solo';
+    this.localIndex = 0;
+    this.onNetStatus('offline', text);
+  }
+
+  retryCoop() {
+    if (this.net.role === 'host') {
+      this.net.invite();
+      return;
+    }
+    this.net.join(this.net.token);
   }
 
   onNetOpen(role, slot) {
@@ -2143,6 +2171,15 @@ class Game {
     this.dim(ctx);
     this.text(ctx, t('ui.title'), w / 2, h * 0.2, { size: portrait ? 40 : 58, color: '#ffd166' });
     this.text(ctx, t('ui.tagline'), w / 2, h * 0.27, { size: portrait ? 17 : 22, weight: 600 });
+
+    const stage = this.coopStage();
+    if (stage) {
+      this.drawCoopScreen(ctx, stage);
+      this.drawLangSwitch(ctx, w / 2, h * 0.94);
+      this.text(ctx, 'v' + GAME_VERSION, w - 14, h - 14, { size: 12, weight: 600, align: 'right', color: 'rgba(255,243,214,.45)' });
+      return;
+    }
+
     this.text(ctx, t(portrait ? 'ui.hintTouch' : 'ui.hintMouse'),
       w / 2, h * 0.32, { size: portrait ? 16 : 19, weight: 600, color: 'rgba(255,243,214,.75)' });
 
@@ -2168,6 +2205,60 @@ class Game {
     this.text(ctx, t('ui.coopHint'), w / 2, h * 0.87, { size: 15, weight: 600, color: '#8ef6c5' });
     this.drawLangSwitch(ctx, w / 2, h * 0.94);
     this.text(ctx, 'v' + GAME_VERSION, w - 14, h - 14, { size: 12, weight: 600, align: 'right', color: 'rgba(255,243,214,.45)' });
+  }
+
+  // пока комната открыта или идёт подключение, играть не с чего — вместо кнопок меню видно, чего ждать
+  coopStage() {
+    if (this.netStatus === 'connecting') {
+      return 'connect';
+    }
+    if (this.netStatus === 'error') {
+      return 'error';
+    }
+    if (this.netStatus === 'waiting' && this.role === 'host') {
+      return 'wait';
+    }
+    return '';
+  }
+
+  drawCoopScreen(ctx, stage) {
+    const w = CONFIG.width;
+    const h = CONFIG.height;
+    const portrait = CONFIG.layout === 'portrait';
+    const titles = { wait: 'ui.coopWait', connect: 'ui.coopConnecting', error: 'ui.coopFailed' };
+    this.text(ctx, t(titles[stage]), w / 2, h * 0.42, {
+      size: portrait ? 28 : 36,
+      color: stage === 'error' ? '#ff4d6d' : '#8ef6c5',
+    });
+    this.text(ctx, this.netMessage, w / 2, h * 0.49, { size: portrait ? 16 : 19, weight: 600 });
+    if (stage === 'wait') {
+      this.text(ctx, t(navigator.share ? 'ui.coopWaitHint' : 'ui.coopWaitHintCopy'), w / 2, h * 0.545,
+        { size: portrait ? 15 : 18, weight: 600, color: 'rgba(255,243,214,.75)' });
+      this.text(ctx, t('ui.coopKeepOpen'), w / 2, h * 0.585,
+        { size: portrait ? 13 : 15, weight: 600, color: 'rgba(255,243,214,.5)' });
+    }
+    if (stage === 'connect') {
+      this.text(ctx, t('ui.coopConnectHint'), w / 2, h * 0.545,
+        { size: portrait ? 15 : 18, weight: 600, color: 'rgba(255,243,214,.75)' });
+    }
+
+    const bw = Math.min(400, w * 0.76);
+    const bh = 64;
+    const bx = w / 2 - bw / 2;
+    let y = h * 0.66;
+    if (stage === 'wait') {
+      this.uiButton(ctx, { x: bx, y, w: bw, h: bh }, { label: t('ui.coopSolo'), action: () => this.startGame() });
+      y += bh + 16;
+      this.uiButton(ctx, { x: bx, y, w: bw, h: bh }, { label: t('dom.cancel'), action: () => this.leaveCoop(t('net.cancelled')) });
+    }
+    if (stage === 'error') {
+      // токен жив, только если комната не ответила: после отказа хоста ломиться туда же незачем
+      if (this.net.token) {
+        this.uiButton(ctx, { x: bx, y, w: bw, h: bh }, { label: t('ui.coopRetry'), tone: 'primary', action: () => this.retryCoop() });
+        y += bh + 16;
+      }
+      this.uiButton(ctx, { x: bx, y, w: bw, h: bh }, { label: t('ui.menu'), action: () => this.leaveCoop(t('dom.netIdle')) });
+    }
   }
 
   drawMapScreen(ctx) {
