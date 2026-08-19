@@ -331,7 +331,7 @@ class Game {
 
   retryCoop() {
     if (this.net.role === 'host') {
-      this.net.invite();
+      this.net.invite(this.net.token);
       return;
     }
     this.net.join(this.net.token);

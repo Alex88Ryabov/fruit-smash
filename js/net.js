@@ -4,6 +4,12 @@
 // который хост передаёт сам — подобрать или перебрать его нельзя.
 const NET_PREFIX = 'fruktolet-';
 const TOKEN_LENGTH = 16;
+// ошибки, после которых комната не потеряна: это оборванный сокет до брокера, а не отказ
+const BROKER_ERRORS = ['network', 'socket-error', 'socket-closed', 'server-error'];
+const REVIVE_DELAY = 3000;
+const MAX_REVIVES = 12;
+const JOIN_RETRY_DELAY = 3000;
+const MAX_JOIN_TRIES = 6;
 
 function inviteToken() {
   const bytes = new Uint8Array(TOKEN_LENGTH);
@@ -85,6 +91,27 @@ class Net {
     this.device = deviceId();
     this.myIp = '';
     this.denied2 = false;
+    this.revives = 0;
+    this.tries = 0;
+    this.rebuilt = false;
+
+    // в фоне телефон рвёт сокет к брокеру: как только игрок вернулся в игру, поднимаем связь
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        this.wake();
+      }
+    });
+  }
+
+  wake() {
+    if (this.role === 'host') {
+      this.reviveRoom();
+      return;
+    }
+    if (this.role === 'guest' && !this.connected) {
+      this.tries = 0;
+      this.retryJoin();
+    }
   }
 
   get available() {
@@ -123,19 +150,26 @@ class Net {
 
   // ---------- хост ----------
 
-  invite() {
+  invite(token) {
     if (!this.available) {
       this.setStatus('error', t('net.noPeer'));
       return;
     }
     this.close();
     this.role = 'host';
-    this.token = inviteToken();
+    if (token) {
+      this.token = token;
+    } else {
+      this.token = inviteToken();
+      this.revives = 0;
+    }
     this.setStatus('connecting', t('net.preparing'));
     this.peer = new window.Peer(NET_PREFIX + this.token, { debug: 0 });
 
     this.peer.on('open', () => {
-      this.setStatus('waiting', t('net.ready'));
+      this.revives = 0;
+      this.setStatus('waiting', this.rebuilt ? t('net.newRoom') : t('net.ready'));
+      this.rebuilt = false;
       this.handlers.onInvite(this.inviteLink);
       publicIp().then((ip) => { this.myIp = ip; });
     });
@@ -146,13 +180,58 @@ class Net {
       conn.on('error', () => this.dropGuest(conn));
     });
 
+    this.peer.on('disconnected', () => this.reviveRoom());
+
     this.peer.on('error', (err) => {
       if (err.type === 'unavailable-id') {
-        this.invite();
+        // имя занято: своя же прошлая регистрация — забираем обратно, чужая — берём новое
+        if (this.revives > 0) {
+          this.reviveRoom();
+        } else {
+          this.invite();
+        }
+        return;
+      }
+      if (BROKER_ERRORS.includes(err.type)) {
+        this.reviveRoom();
         return;
       }
       this.setStatus('error', t('net.error', { type: err.type }));
     });
+  }
+
+  // комната живёт у брокера, пока жив сокет: поднимаем её под тем же токеном,
+  // иначе ссылка, которую уже отправили другу, протухнет
+  reviveRoom() {
+    if (this.role !== 'host' || !this.token) {
+      return;
+    }
+    if (this.peer && !this.peer.destroyed && !this.peer.disconnected) {
+      return;
+    }
+    if (this.revives >= MAX_REVIVES) {
+      // имя комнаты держит зависший сокет и уже не отпустит: открываем новую и говорим об этом
+      this.revives = 0;
+      this.rebuilt = true;
+      this.invite();
+      return;
+    }
+    this.revives += 1;
+    this.setStatus('connecting', t('net.reviving'));
+    const peer = this.peer;
+    const token = this.token;
+    // «связь потеряна» прилетает и когда peer уничтожают: дожидаемся, пока он дойдёт до конца.
+    // reconnect на умирающем peer оставляет у брокера висячий сокет, и имя комнаты занимаем сами у себя
+    setTimeout(() => {
+      if (this.role !== 'host' || this.token !== token || this.status === 'waiting' || this.status === 'online') {
+        return;
+      }
+      if (this.peer === peer && peer && peer.disconnected && !peer.destroyed) {
+        peer.reconnect();
+        return;
+      }
+      this.invite(token);
+    }, REVIVE_DELAY);
   }
 
   hostData(conn, data) {
@@ -243,20 +322,44 @@ class Net {
   // ---------- гость ----------
 
   join(text) {
-    if (!this.available) {
-      this.setStatus('error', t('net.noPeer'));
-      return;
-    }
     const token = parseInvite(text);
     if (!token) {
       this.setStatus('error', t('net.badInvite'));
+      return;
+    }
+    this.tries = 0;
+    this.connectTo(token);
+  }
+
+  // хост мог уснуть на минуту вместе с телефоном: комната вернётся, поэтому стучимся ещё несколько раз
+  retryJoin() {
+    if (this.role !== 'guest' || !this.token) {
+      return;
+    }
+    if (this.tries >= MAX_JOIN_TRIES) {
+      this.setStatus('error', t('net.notFound'));
+      return;
+    }
+    this.tries += 1;
+    const token = this.token;
+    this.setStatus('connecting', t('net.searching'));
+    setTimeout(() => {
+      if (this.role === 'guest' && this.token === token && !this.connected) {
+        this.connectTo(token);
+      }
+    }, JOIN_RETRY_DELAY);
+  }
+
+  connectTo(token) {
+    if (!this.available) {
+      this.setStatus('error', t('net.noPeer'));
       return;
     }
     this.close();
     this.role = 'guest';
     this.token = token;
     this.denied2 = false;
-    this.setStatus('connecting', t('net.connecting'));
+    this.setStatus('connecting', this.tries > 0 ? t('net.searching') : t('net.connecting'));
     this.peer = new window.Peer({ debug: 0 });
 
     this.peer.on('open', () => {
@@ -264,6 +367,7 @@ class Net {
       this.conn = conn;
 
       conn.on('open', () => {
+        this.tries = 0;
         this.setStatus('connecting', t('net.handshake'));
         // свой публичный адрес отдаём сами: хост по нему видит вход из своей же сети
         publicIp().then((ip) => {
@@ -294,6 +398,7 @@ class Net {
         if (!this.denied2) {
           this.setStatus('offline', t('net.closed'));
           this.handlers.onClose();
+          this.retryJoin();
         }
       });
       conn.on('error', () => {
@@ -304,8 +409,11 @@ class Net {
     });
 
     this.peer.on('error', (err) => {
-      const text2 = err.type === 'peer-unavailable' ? t('net.notFound') : t('net.error', { type: err.type });
-      this.setStatus('error', text2);
+      if (err.type === 'peer-unavailable') {
+        this.retryJoin();
+        return;
+      }
+      this.setStatus('error', t('net.error', { type: err.type }));
     });
   }
 
