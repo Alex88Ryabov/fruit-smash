@@ -7,7 +7,7 @@ class Save {
   }
 
   read() {
-    const blank = { stars: {}, seeds: 0, upgrades: {}, best: 0, bestWave: 0 };
+    const blank = { stars: {}, seeds: 0, upgrades: {}, best: 0, bestWave: 0, xp: 0, runs: [] };
     let stored = null;
     try {
       stored = JSON.parse(localStorage.getItem(SAVE_KEY));
@@ -17,11 +17,17 @@ class Save {
     const data = stored ? Object.assign(blank, stored) : blank;
     data.stars = data.stars || {};
     data.upgrades = data.upgrades || {};
+    data.xp = data.xp || 0;
+    data.runs = data.runs || [];
 
     // рекорд из старых версий лежал отдельным ключом
     const legacyBest = Number(localStorage.getItem('fruktolet.best') || 0);
     if (legacyBest > data.best) {
       data.best = legacyBest;
+    }
+    // рекорд, поставленный до появления таблицы, становится её первой строкой
+    if (data.best > 0 && data.runs.length === 0) {
+      data.runs.push({ s: data.best, w: data.bestWave || 1, d: Date.now() });
     }
     return data;
   }
@@ -36,6 +42,29 @@ class Save {
 
   get best() {
     return this.data.best;
+  }
+
+  get xp() {
+    return this.data.xp;
+  }
+
+  get runs() {
+    return this.data.runs;
+  }
+
+  addXp(amount) {
+    this.data.xp += amount;
+    this.write();
+  }
+
+  rankIndex() {
+    let index = 0;
+    for (let i = 0; i < RANKS.length; i++) {
+      if (this.data.xp >= RANKS[i].need) {
+        index = i;
+      }
+    }
+    return index;
   }
 
   stars(id) {
@@ -79,13 +108,19 @@ class Save {
     this.write();
   }
 
+  // забег попадает в таблицу топ-10; place — занятое место, 0 если не дотянул
   recordEndless(score, wave) {
     const seeds = Math.floor(score / 100);
     this.data.seeds += seeds;
     this.data.best = Math.max(this.data.best, Math.round(score));
     this.data.bestWave = Math.max(this.data.bestWave, wave);
+    const entry = { s: Math.round(score), w: wave, d: Date.now() };
+    this.data.runs.push(entry);
+    this.data.runs.sort((a, b) => b.s - a.s);
+    const place = this.data.runs.indexOf(entry) + 1;
+    this.data.runs = this.data.runs.slice(0, 10);
     this.write();
-    return seeds;
+    return { seeds, place: place <= 10 ? place : 0 };
   }
 
   level(key) {

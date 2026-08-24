@@ -163,6 +163,12 @@ class SoundBox {
     });
   }
 
+  rankUp() {
+    [523, 659, 784, 1047, 784, 1319].forEach((f, i) => {
+      this.tone({ freq: f, toFreq: f, type: 'triangle', dur: 0.2, gain: 0.2, delay: i * 0.09 });
+    });
+  }
+
   rage() {
     this.tone({ freq: 90, toFreq: 260, type: 'sawtooth', dur: 0.5, gain: 0.28 });
     this.noise({ dur: 0.65, gain: 0.26, cutoff: 700, sweepTo: 2600 });

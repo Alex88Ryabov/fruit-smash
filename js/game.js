@@ -5,6 +5,7 @@ const MODE = {
   menu: 'menu',
   map: 'map',
   upgrades: 'upgrades',
+  records: 'records',
   playing: 'playing',
   banner: 'banner',
   paused: 'paused',
@@ -167,6 +168,9 @@ class Game {
     this.objective = null;
     this.result = null;
     this.earnedSeeds = 0;
+    this.earnedXp = 0;
+    this.lastPlace = 0;
+    this.rankUp = null;
     this.tookDamage = false;
     this.perks = this.save.perks();
     this.palette = PALETTE;
@@ -646,7 +650,18 @@ class Game {
     ];
   }
 
-  // уровень пройден: считаем звёзды и семечки, кладём в сохранение
+  // очки звания принимает сохранение; повышение отмечаем фанфарами, экраны покажут строку
+  grantXp(amount) {
+    const before = this.save.rankIndex();
+    this.save.addXp(amount);
+    if (this.save.rankIndex() > before) {
+      this.rankUp = RANKS[this.save.rankIndex()];
+      this.sound.rankUp();
+    }
+    return amount;
+  }
+
+  // уровень пройден: считаем звёзды, семечки и очки звания, кладём в сохранение
   finishLevel(success, reason = '') {
     const plan = this.level;
     if (!plan || this.mode === MODE.result) {
@@ -657,11 +672,13 @@ class Game {
     const replay = this.save.done(plan.id);
     const seeds = success ? Math.round((15 + stars * 10) * (replay ? 0.3 : 1)) : 0;
 
+    let xp = 0;
     if (success) {
       this.save.recordLevel(plan.id, stars, seeds);
+      xp = this.grantXp(stars * 20 + this.levelKills);
       this.perks = this.save.perks();
     }
-    this.result = { success, stars, seeds, reason, plan, goals };
+    this.result = { success, stars, seeds, xp, rankUp: this.rankUp, reason, plan, goals };
     this.mode = MODE.result;
     this.fx(success ? 'wave' : 'over', CONFIG.width / 2, CONFIG.height / 2);
   }
@@ -1119,7 +1136,10 @@ class Game {
       this.lobby.classList.remove('hidden');
     }
     this.fx('over', CONFIG.width / 2, CONFIG.height / 2);
-    this.earnedSeeds = this.save.recordEndless(this.score, this.wave);
+    const record = this.save.recordEndless(this.score, this.wave);
+    this.earnedSeeds = record.seeds;
+    this.lastPlace = record.place;
+    this.earnedXp = this.grantXp(this.wave * 12 + Math.round(this.score / 50));
     this.best = this.save.best;
     this.perks = this.save.perks();
   }
@@ -2249,6 +2269,7 @@ class Game {
 
     this.text(ctx, t(portrait ? 'ui.hintTouch' : 'ui.hintMouse'),
       w / 2, h * 0.32, { size: portrait ? 16 : 19, weight: 600, color: 'rgba(255,243,214,.75)' });
+    this.drawRankLine(ctx, w / 2, h * 0.36);
 
     const bw = Math.min(400, w * 0.76);
     const bh = 64;
@@ -2264,14 +2285,44 @@ class Game {
       sub: t('ui.best', { n: formatScore(this.save.best) }),
       action: () => this.startGame(),
     });
-    this.uiButton(ctx, { x: bx, y: h * 0.42 + (bh + 16) * 2, w: bw, h: bh }, {
+    const half = (bw - 12) / 2;
+    this.uiButton(ctx, { x: bx, y: h * 0.42 + (bh + 16) * 2, w: half, h: bh }, {
       label: t('ui.upgrades'),
       sub: t('ui.seeds', { n: this.save.seeds }),
       action: () => { this.mode = MODE.upgrades; },
     });
+    this.uiButton(ctx, { x: bx + half + 12, y: h * 0.42 + (bh + 16) * 2, w: half, h: bh }, {
+      label: t('ui.records'),
+      sub: RANKS[this.save.rankIndex()].emoji + ' ' + t('rank.' + RANKS[this.save.rankIndex()].key),
+      action: () => { this.mode = MODE.records; },
+    });
     this.text(ctx, t('ui.coopHint'), w / 2, h * 0.87, { size: 15, weight: 600, color: '#8ef6c5' });
     this.drawLangSwitch(ctx, w / 2, h * 0.94);
     this.text(ctx, 'v' + GAME_VERSION, w - 14, h - 14, { size: 12, weight: 600, align: 'right', color: 'rgba(255,243,214,.45)' });
+  }
+
+  // звание и прогресс до следующего: очки капают за уровни и забеги
+  drawRankLine(ctx, cx, cy) {
+    const index = this.save.rankIndex();
+    const rank = RANKS[index];
+    const next = RANKS[index + 1];
+    this.text(ctx, rank.emoji + ' ' + t('rank.' + rank.key), cx, cy, { size: 20, color: '#ffd166' });
+    if (!next) {
+      return;
+    }
+    const w = 180;
+    const y = cy + 15;
+    const k = clamp((this.save.xp - rank.need) / (next.need - rank.need), 0, 1);
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,.14)';
+    roundRect(ctx, cx - w / 2, y, w, 6, 3);
+    ctx.fill();
+    ctx.fillStyle = '#ffd166';
+    roundRect(ctx, cx - w / 2, y, w * k, 6, 3);
+    ctx.fill();
+    ctx.restore();
+    this.text(ctx, t('ui.toNextRank', { n: next.need - this.save.xp }), cx, y + 16,
+      { size: 12, weight: 600, color: 'rgba(255,243,214,.55)' });
   }
 
   // пока комната открыта или идёт подключение, играть не с чего — вместо кнопок меню видно, чего ждать
@@ -2490,6 +2541,10 @@ class Game {
     if (!success && result.reason) {
       this.text(ctx, result.reason, w / 2, h * 0.35, { size: 18, weight: 600, color: '#ff7591' });
     }
+    if (success && result.rankUp) {
+      this.text(ctx, '🎖 ' + t('ui.newRank', { name: result.rankUp.emoji + ' ' + t('rank.' + result.rankUp.key) }),
+        w / 2, h * 0.34, { size: 17, color: '#ffd166' });
+    }
 
     if (success) {
       this.drawStars(ctx, w / 2, h * 0.38, result.stars, 42);
@@ -2507,7 +2562,8 @@ class Game {
     }
 
     if (success) {
-      this.text(ctx, t('ui.seedsGained', { n: result.seeds }), w / 2, goalY + 8, { size: 21, color: '#c0f36b' });
+      this.text(ctx, t('ui.seedsGained', { n: result.seeds }) + ' · ' + t('ui.xpGained', { n: result.xp }),
+        w / 2, goalY + 8, { size: 19, color: '#c0f36b' });
     }
 
     const bw = Math.min(340, w * 0.7);
@@ -2533,7 +2589,15 @@ class Game {
     this.text(ctx, t('ui.runStats', { w: this.wave, k: this.killed, c: this.bestCombo }),
       w / 2, h * 0.44, { size: 16, weight: 600, color: 'rgba(255,243,214,.8)' });
     if (this.earnedSeeds > 0) {
-      this.text(ctx, t('ui.seedsGained', { n: this.earnedSeeds }), w / 2, h * 0.49, { size: 20, color: '#c0f36b' });
+      this.text(ctx, t('ui.seedsGained', { n: this.earnedSeeds }) + ' · ' + t('ui.xpGained', { n: this.earnedXp }),
+        w / 2, h * 0.49, { size: 19, color: '#c0f36b' });
+    }
+    if (this.lastPlace > 0) {
+      this.text(ctx, '🏆 ' + t('ui.tablePlace', { n: this.lastPlace }), w / 2, h * 0.53, { size: 17, color: '#8ef6c5' });
+    }
+    if (this.rankUp) {
+      this.text(ctx, '🎖 ' + t('ui.newRank', { name: this.rankUp.emoji + ' ' + t('rank.' + this.rankUp.key) }),
+        w / 2, h * 0.565, { size: 17, color: '#ffd166' });
     }
 
     if (this.role === 'guest') {
@@ -2544,10 +2608,50 @@ class Game {
     const bw = Math.min(340, w * 0.7);
     const bh = 56;
     const bx = w / 2 - bw / 2;
-    this.uiButton(ctx, { x: bx, y: h * 0.58, w: bw, h: bh }, { label: t('ui.again'), tone: 'primary', action: () => this.startGame() });
+    this.uiButton(ctx, { x: bx, y: h * 0.6, w: bw, h: bh }, { label: t('ui.again'), tone: 'primary', action: () => this.startGame() });
     if (this.role === 'solo') {
-      this.uiButton(ctx, { x: bx, y: h * 0.58 + bh + 12, w: bw, h: bh }, { label: t('ui.menu'), action: () => this.openMenu() });
+      this.uiButton(ctx, { x: bx, y: h * 0.6 + bh + 12, w: bw, h: bh }, { label: t('ui.records'), action: () => { this.mode = MODE.records; } });
+      this.uiButton(ctx, { x: bx, y: h * 0.6 + (bh + 12) * 2, w: bw, h: bh }, { label: t('ui.menu'), action: () => this.openMenu() });
     }
+  }
+
+  drawRecordsScreen(ctx) {
+    const w = CONFIG.width;
+    const h = CONFIG.height;
+    const portrait = CONFIG.layout === 'portrait';
+    this.dim(ctx);
+    this.text(ctx, t('ui.recordsTitle'), w / 2, h * 0.11, { size: portrait ? 28 : 34, color: '#ffd166' });
+    this.drawRankLine(ctx, w / 2, h * 0.18);
+
+    const runs = this.save.runs;
+    if (runs.length === 0) {
+      this.text(ctx, t('ui.recordsEmpty'), w / 2, h * 0.45, { size: 18, weight: 600, color: 'rgba(255,243,214,.7)' });
+    }
+    const rowH = Math.min(portrait ? 44 : 34, (h * 0.52) / 10);
+    const left = w / 2 - Math.min(260, w * 0.38);
+    const right = w / 2 + Math.min(260, w * 0.38);
+    runs.forEach((run, i) => {
+      const y = h * 0.27 + i * rowH;
+      const fresh = this.lastPlace > 0 && i === this.lastPlace - 1;
+      const color = fresh ? '#8ef6c5' : PALETTE.hud;
+      if (i < 3) {
+        drawEmoji(ctx, ['🥇', '🥈', '🥉'][i], left + 14, y, 24);
+      } else {
+        this.text(ctx, String(i + 1), left + 14, y, { size: 16, color: 'rgba(255,243,214,.6)' });
+      }
+      this.text(ctx, formatScore(run.s), left + 46, y, { size: 19, align: 'left', color });
+      this.text(ctx, t('ui.waveShort', { n: run.w }), w / 2 + 30, y, { size: 15, weight: 600, color: fresh ? color : 'rgba(255,243,214,.7)' });
+      const date = new Date(run.d);
+      const label = String(date.getDate()).padStart(2, '0') + '.'
+        + String(date.getMonth() + 1).padStart(2, '0') + '.'
+        + String(date.getFullYear()).slice(2);
+      this.text(ctx, label, right, y, { size: 14, weight: 600, align: 'right', color: 'rgba(255,243,214,.5)' });
+    });
+
+    this.uiButton(ctx, { x: w / 2 - 80, y: h * 0.88, w: 160, h: 48 }, {
+      label: t('ui.back'),
+      action: () => this.openMenu(),
+    });
   }
 
   drawPauseScreen(ctx) {
@@ -2658,6 +2762,9 @@ class Game {
     }
     if (this.mode === MODE.upgrades) {
       this.drawUpgradesScreen(ctx);
+    }
+    if (this.mode === MODE.records) {
+      this.drawRecordsScreen(ctx);
     }
     if (this.mode === MODE.paused) {
       this.drawPauseScreen(ctx);

@@ -93,6 +93,16 @@ const OBJECTIVE_ORDER = [
   'hunt', 'clear', 'defend', 'survive', 'hunt', 'clear',
 ];
 
+// звания: очки капают за пройденные уровни и забеги бесконечного режима, звание навсегда
+const RANKS = [
+  { key: 'seed', emoji: '🌱', need: 0 },
+  { key: 'thrower', emoji: '🪃', need: 150 },
+  { key: 'sniper', emoji: '🎯', need: 400 },
+  { key: 'ace', emoji: '🥇', need: 800 },
+  { key: 'storm', emoji: '🌪️', need: 1400 },
+  { key: 'legend', emoji: '👑', need: 2200 },
+];
+
 const UPGRADES = {
   heart: { key: 'heart', emoji: '❤️', costs: [60, 150, 320] },
   reload: { key: 'reload', emoji: '⚡', costs: [50, 130, 280] },
