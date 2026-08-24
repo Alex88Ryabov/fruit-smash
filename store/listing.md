@@ -1,4 +1,47 @@
-# Материалы для Google Play
+# Материалы для площадок
+
+## CrazyGames: шаг Details
+
+Материалы лежат в `store/crazygames/`, собираются скриптами из игры (обложки — стенд `covers.html`, ролики — `record-video.js`).
+
+| Поле | Что ставить |
+| --- | --- |
+| Category | `Shooting` (если нет — `Casual`) |
+| Tags (макс. 5) | `2 player`, `co-op`, `arcade`, `physics`, `cartoon` |
+| Google Play / iOS / Steam | пусто — игра ещё не в магазинах |
+| Marketing creatives URL | пусто |
+| Cover images | `cover-1920x1080.png`, `cover-800x1200.png`, `cover-800x800.png` |
+| Preview videos | `preview-landscape.mp4` (1920×1080), `preview-portrait.mp4` (1080×1620) |
+| Mobile orientation | BOTH (задаётся сборкой, менять нельзя) |
+| Works well in fullscreen | да |
+| "Online with Friends" Lobby Size | Min 2, Max 4 — совпадает с `CONFIG.maxPlayers` |
+
+**Description**
+
+```
+The fruit learned to fly, and now it wants you gone. Grab a potato, pull back like a slingshot, mind the wind and knock every apple, cherry and watermelon out of the sky.
+
+Keep hitting and the rage meter fills: your hero bursts into flames, the charge bar disappears and every shot flies at full power.
+
+• Campaign: 5 gardens, 12 levels each, with wind, rain, night, acid puddles and rotten splashes
+• Three stars per level: clear it, take no damage, complete the special goal
+• Endless mode with a boss every fifth wave
+• Upgrades between runs: hearts, reload speed, pickup magnet, starting weapon
+• Weapons that change everything: nuts, corn machine gun, exploding pineapple, homing carrot
+• Ranks and a high score table to climb
+• Co-op for up to 4 friends: one link and they land straight in your game
+• English, Russian and Ukrainian
+```
+
+**Controls**
+
+```
+Mouse: aim with the cursor, hold the left button to charge, release to throw. A/D to run, SPACE to jump, P to pause, M for sound.
+Touch: drag back from the hero and release to throw, drag along the bottom strip to run, tap the arrow to jump.
+```
+
+## Материалы для Google Play
+
 
 Всё, что просит консоль при создании приложения. Тексты готовы к вставке, картинки лежат рядом.
 
