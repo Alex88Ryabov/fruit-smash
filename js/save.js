@@ -1,6 +1,7 @@
 const SAVE_KEY = 'fruktolet.save';
 
-// прогресс кампании и мета-прокачка живут в localStorage одним объектом
+// прогресс кампании и мета-прокачка живут одним объектом в CG.store():
+// на CrazyGames это их облачный сейв, в остальных местах — localStorage
 class Save {
   constructor() {
     this.data = this.read();
@@ -10,7 +11,7 @@ class Save {
     const blank = { stars: {}, seeds: 0, upgrades: {}, best: 0, bestWave: 0, xp: 0, runs: [] };
     let stored = null;
     try {
-      stored = JSON.parse(localStorage.getItem(SAVE_KEY));
+      stored = JSON.parse(CG.store().getItem(SAVE_KEY));
     } catch (err) {
       stored = null;
     }
@@ -21,7 +22,7 @@ class Save {
     data.runs = data.runs || [];
 
     // рекорд из старых версий лежал отдельным ключом
-    const legacyBest = Number(localStorage.getItem('fruktolet.best') || 0);
+    const legacyBest = Number(CG.store().getItem('fruktolet.best') || 0);
     if (legacyBest > data.best) {
       data.best = legacyBest;
     }
@@ -33,7 +34,7 @@ class Save {
   }
 
   write() {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+    CG.store().setItem(SAVE_KEY, JSON.stringify(this.data));
   }
 
   get seeds() {

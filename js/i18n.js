@@ -606,7 +606,7 @@ const STRINGS = {
 let currentLang = 'ru';
 
 function detectLang() {
-  const saved = localStorage.getItem('fruktolet.lang');
+  const saved = CG.store().getItem('fruktolet.lang');
   if (saved && STRINGS[saved]) {
     return saved;
   }
@@ -652,7 +652,7 @@ function setLang(lang) {
     return;
   }
   currentLang = lang;
-  localStorage.setItem('fruktolet.lang', lang);
+  CG.store().setItem('fruktolet.lang', lang);
   applyDomStrings();
 }
 

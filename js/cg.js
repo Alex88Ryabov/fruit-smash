@@ -70,6 +70,12 @@ const CG = {
     }
   },
 
+  // куда писать прогресс: на площадке — их data-модуль (интерфейс localStorage, облако
+  // для залогиненных), иначе обычный localStorage. Автосейв площадки в iframe не работает
+  store() {
+    return this.active && this.sdk.data ? this.sdk.data : localStorage;
+  },
+
   // площадка глушит звук своим тумблером: отдаём игре и текущее значение, и все изменения
   watchSettings(onMute) {
     if (!this.active) {

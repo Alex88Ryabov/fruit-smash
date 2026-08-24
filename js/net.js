@@ -23,7 +23,9 @@ function parseInvite(text) {
   return match ? match[0].toLowerCase() : '';
 }
 
-// метка браузера: по ней хост узнаёт свою же вкладку, открытую по собственной ссылке
+// метка браузера: по ней хост узнаёт свою же вкладку, открытую по собственной ссылке.
+// нарочно в localStorage, а не в CG.store(): облачный сейв съехался бы на все устройства
+// игрока, и хост принимал бы их за свою же вкладку
 function deviceId() {
   let id = localStorage.getItem('fruktolet.device');
   if (!id) {
