@@ -70,6 +70,24 @@ const CG = {
     }
   },
 
+  // площадка глушит звук своим тумблером: отдаём игре и текущее значение, и все изменения
+  watchSettings(onMute) {
+    if (!this.active) {
+      return;
+    }
+    try {
+      const apply = (settings) => {
+        if (settings && typeof settings.muteAudio === 'boolean') {
+          onMute(settings.muteAudio);
+        }
+      };
+      this.sdk.game.addSettingsChangeListener(apply);
+      apply(this.sdk.game.settings);
+    } catch (err) {
+      // без настроек площадки звук просто остаётся под управлением игры
+    }
+  },
+
   inviteParam(name) {
     if (!this.active) {
       return null;

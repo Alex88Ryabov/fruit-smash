@@ -1,6 +1,6 @@
 {
   "name": "fruktolet",
-  "version": "1.10.1",
+  "version": "1.10.2",
   "description": "Фруктолёт — аркада на canvas",
   "scripts": {
     "www": "node build-www.js",

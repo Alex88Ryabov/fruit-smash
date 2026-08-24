@@ -86,6 +86,7 @@ class Game {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.sound = new SoundBox();
+    CG.watchSettings((muted) => this.sound.setPortalMute(muted));
     applyLayout(this.preferredLayout());
     this.save = new Save();
     this.best = this.save.best;

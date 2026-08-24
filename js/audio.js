@@ -4,6 +4,18 @@ class SoundBox {
     this.ctx = null;
     this.master = null;
     this.muted = localStorage.getItem('fruktolet.muted') === '1';
+    // площадка (CrazyGames) может глушить звук своим тумблером; он сильнее внутриигрового
+    this.portalMuted = false;
+  }
+
+  get silent() {
+    return this.muted || this.portalMuted;
+  }
+
+  applyVolume() {
+    if (this.master) {
+      this.master.gain.value = this.silent ? 0 : 0.5;
+    }
   }
 
   // AudioContext создаём только после первого жеста пользователя
@@ -20,21 +32,24 @@ class SoundBox {
     }
     this.ctx = new Ctor();
     this.master = this.ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.5;
     this.master.connect(this.ctx.destination);
+    this.applyVolume();
   }
 
   toggleMute() {
     this.muted = !this.muted;
     localStorage.setItem('fruktolet.muted', this.muted ? '1' : '0');
-    if (this.master) {
-      this.master.gain.value = this.muted ? 0 : 0.5;
-    }
+    this.applyVolume();
     return this.muted;
   }
 
+  setPortalMute(on) {
+    this.portalMuted = on;
+    this.applyVolume();
+  }
+
   tone({ freq, toFreq = freq, type = 'sine', dur = 0.2, gain = 0.3, delay = 0 }) {
-    if (!this.ctx || this.muted) {
+    if (!this.ctx || this.silent) {
       return;
     }
     const t0 = this.ctx.currentTime + delay;
@@ -52,7 +67,7 @@ class SoundBox {
   }
 
   noise({ dur = 0.2, gain = 0.3, cutoff = 1800, sweepTo = null, delay = 0 }) {
-    if (!this.ctx || this.muted) {
+    if (!this.ctx || this.silent) {
       return;
     }
     const t0 = this.ctx.currentTime + delay;
