@@ -251,6 +251,16 @@ class Game {
     if (cgRoom && this.net.role === 'solo') {
       this.net.join(cgRoom);
     }
+    // друг позвал уже открытую игру — подключаемся без перезагрузки страницы
+    CG.onJoinRoom((token) => {
+      if (this.net.token !== token) {
+        this.net.join(token);
+      }
+    });
+    // пати-лидер мгновенного мультиплеера сразу открывает комнату, к нему можно входить
+    if (!cgRoom && CG.instantMultiplayer) {
+      this.net.invite();
+    }
   }
 
   onNetStatus(status, text) {

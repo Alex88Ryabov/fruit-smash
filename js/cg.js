@@ -5,9 +5,17 @@ const CG = {
   active: false,
   sdk: null,
 
-  // хосты площадки: сама crazygames.com и её игровые CDN-поддомены
+  // площадка: хосты crazygames и любой iframe — региональные зеркала площадки крутят игру
+  // во фрейме со своего CDN. отдельно открытая игра (сайт, приложение) — всегда верхнее окно
   get onPortal() {
-    return /(^|\.)crazygames\./.test(location.hostname);
+    if (/(^|\.)crazygames\./.test(location.hostname)) {
+      return true;
+    }
+    try {
+      return window.self !== window.top;
+    } catch (err) {
+      return true;
+    }
   },
 
   // SDK инициализируется до старта игры, иначе не прочитать параметры приглашения.
@@ -91,6 +99,57 @@ const CG = {
       apply(this.sdk.game.settings);
     } catch (err) {
       // без настроек площадки звук просто остаётся под управлением игры
+    }
+  },
+
+  // пати-лидер мгновенного мультиплеера должен сразу открыть комнату для друзей
+  get instantMultiplayer() {
+    if (!this.active) {
+      return false;
+    }
+    try {
+      return Boolean(this.sdk.game.isInstantMultiplayer);
+    } catch (err) {
+      return false;
+    }
+  },
+
+  // состояние комнаты для соцслоя площадки: кто в игре и можно ли присоединиться
+  updateRoom(token, joinable) {
+    if (!this.active) {
+      return;
+    }
+    try {
+      this.sdk.game.updateRoom({ roomId: token, isJoinable: joinable, inviteParams: { r: token } });
+    } catch (err) {
+      // соцслой переживёт
+    }
+  },
+
+  leftRoom() {
+    if (!this.active) {
+      return;
+    }
+    try {
+      this.sdk.game.leftRoom();
+    } catch (err) {
+      // соцслой переживёт
+    }
+  },
+
+  // друг позвал в комнату, пока игра открыта: площадка отдаёт параметры без перезагрузки
+  onJoinRoom(listener) {
+    if (!this.active) {
+      return;
+    }
+    try {
+      this.sdk.game.addJoinRoomListener((params) => {
+        if (params && params.r) {
+          listener(String(params.r));
+        }
+      });
+    } catch (err) {
+      // без слушателя вход остаётся по ссылке
     }
   },
 

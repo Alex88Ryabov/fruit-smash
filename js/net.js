@@ -180,6 +180,7 @@ class Net {
       this.setStatus('waiting', this.rebuilt ? t('net.newRoom') : t('net.ready'));
       this.rebuilt = false;
       this.resolveInviteLink().then((link) => this.handlers.onInvite(link));
+      CG.updateRoom(this.token, true);
       publicIp().then((ip) => { this.myIp = ip; });
     });
 
@@ -256,6 +257,7 @@ class Net {
       this.guests.push({ conn, slot, device: data.device, ip: data.ip || '', lastSeen: Date.now() });
       conn.send({ t: 'hello', slot });
       this.setStatus('online', t('net.inRoom', { n: this.playerCount }));
+      CG.updateRoom(this.token, this.playerCount < CONFIG.maxPlayers);
       this.handlers.onGuestJoin(slot);
       return;
     }
@@ -319,6 +321,7 @@ class Net {
       return;
     }
     this.setStatus(this.connected ? 'online' : 'waiting', t('net.left', { n: this.playerCount }));
+    CG.updateRoom(this.token, this.playerCount < CONFIG.maxPlayers);
     this.handlers.onGuestLeave(guest.slot);
   }
 
@@ -395,6 +398,7 @@ class Net {
         }
         if (data.t === 'hello') {
           this.setStatus('online', t('net.joined'));
+          CG.updateRoom(this.token, true);
           this.handlers.onOpen('guest', data.slot);
           return;
         }
@@ -429,6 +433,7 @@ class Net {
   denied(reason) {
     this.refused = true;
     this.setStatus('error', t('net.deny.' + reason));
+    CG.leftRoom();
     const peer = this.peer;
     this.peer = null;
     this.conn = null;
@@ -460,6 +465,9 @@ class Net {
     if (this.peer) {
       this.peer.destroy();
       this.peer = null;
+    }
+    if (this.token) {
+      CG.leftRoom();
     }
     this.role = 'solo';
     this.token = '';
