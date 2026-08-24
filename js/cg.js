@@ -19,23 +19,34 @@ const CG = {
   },
 
   // SDK инициализируется до старта игры, иначе не прочитать параметры приглашения.
-  // вне площадки (и если скрипт не доехал) игра стартует сразу
+  // вне площадки (и если скрипт не доехал) игра стартует сразу. сторожевой таймер
+  // спасает от зависшего скрипта или init в чужом iframe: игра стартует без SDK,
+  // опоздавшая инициализация игнорируется
   boot(onReady) {
     if (!this.onPortal) {
       onReady();
       return;
     }
-    const script = document.createElement('script');
-    script.src = 'https://sdk.crazygames.com/crazygames-sdk-v3.js';
-    script.onload = () => {
-      window.CrazyGames.SDK.init().then(() => {
+    let started = false;
+    const start = (activate) => {
+      if (started) {
+        return;
+      }
+      started = true;
+      if (activate) {
         this.sdk = window.CrazyGames.SDK;
         this.active = true;
         this.call('loadingStart');
-        onReady();
-      }, onReady);
+      }
+      onReady();
     };
-    script.onerror = onReady;
+    setTimeout(() => start(false), 6000);
+    const script = document.createElement('script');
+    script.src = 'https://sdk.crazygames.com/crazygames-sdk-v3.js';
+    script.onload = () => {
+      window.CrazyGames.SDK.init().then(() => start(true), () => start(false));
+    };
+    script.onerror = () => start(false);
     document.head.appendChild(script);
   },
 
@@ -78,10 +89,35 @@ const CG = {
     }
   },
 
+  memoryStore: null,
+
+  // localStorage бывает запрещён целиком (iframe при строгих настройках куки) —
+  // тогда прогресс живёт в памяти до конца вкладки, но игра хотя бы работает
+  localStore() {
+    try {
+      localStorage.getItem('fruktolet.probe');
+      return localStorage;
+    } catch (err) {
+      if (!this.memoryStore) {
+        const memory = {};
+        this.memoryStore = {
+          getItem: (key) => (key in memory ? memory[key] : null),
+          setItem: (key, value) => {
+            memory[key] = String(value);
+          },
+          removeItem: (key) => {
+            delete memory[key];
+          },
+        };
+      }
+      return this.memoryStore;
+    }
+  },
+
   // куда писать прогресс: на площадке — их data-модуль (интерфейс localStorage, облако
-  // для залогиненных), иначе обычный localStorage. Автосейв площадки в iframe не работает
+  // для залогиненных), иначе localStorage с фолбэком в память. Автосейв площадки в iframe не работает
   store() {
-    return this.active && this.sdk.data ? this.sdk.data : localStorage;
+    return this.active && this.sdk.data ? this.sdk.data : this.localStore();
   },
 
   // площадка глушит звук своим тумблером: отдаём игре и текущее значение, и все изменения

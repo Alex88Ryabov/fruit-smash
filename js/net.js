@@ -25,14 +25,24 @@ function parseInvite(text) {
 
 // метка браузера: по ней хост узнаёт свою же вкладку, открытую по собственной ссылке.
 // нарочно в localStorage, а не в CG.store(): облачный сейв съехался бы на все устройства
-// игрока, и хост принимал бы их за свою же вкладку
+// игрока, и хост принимал бы их за свою же вкладку. если localStorage запрещён —
+// метка живёт до конца вкладки, защита от самоввхода просто слабее
 function deviceId() {
-  let id = localStorage.getItem('fruktolet.device');
+  let id = null;
+  try {
+    id = localStorage.getItem('fruktolet.device');
+  } catch (err) {
+    id = null;
+  }
   if (!id) {
     const bytes = new Uint8Array(10);
     crypto.getRandomValues(bytes);
     id = Array.from(bytes, (b) => (b % 36).toString(36)).join('');
-    localStorage.setItem('fruktolet.device', id);
+    try {
+      localStorage.setItem('fruktolet.device', id);
+    } catch (err) {
+      // не запомнилась — и ладно
+    }
   }
   return id;
 }
