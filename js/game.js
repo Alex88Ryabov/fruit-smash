@@ -2654,6 +2654,27 @@ class Game {
     });
   }
 
+  // переключатель звука для экранов без игрового поля: на поле есть своя кнопка
+  drawSoundButton(ctx) {
+    const size = 46;
+    const rect = { x: 12, y: CONFIG.height - size - 12, w: size, h: size };
+    ctx.save();
+    ctx.fillStyle = 'rgba(10,8,23,.45)';
+    roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 12);
+    ctx.fill();
+    ctx.restore();
+    drawEmoji(ctx, this.sound.muted ? '🔇' : '🔊', rect.x + size / 2, rect.y + size / 2, 24);
+    this.ui.push({
+      rect,
+      action: () => {
+        // после включения звука подтверждаем его щелчком — при выключении тишина и есть ответ
+        if (!this.sound.toggleMute()) {
+          this.sound.pop();
+        }
+      },
+    });
+  }
+
   drawPauseScreen(ctx) {
     const w = CONFIG.width;
     const h = CONFIG.height;
@@ -2765,6 +2786,9 @@ class Game {
     }
     if (this.mode === MODE.records) {
       this.drawRecordsScreen(ctx);
+    }
+    if (this.mode === MODE.menu || this.mode === MODE.map || this.mode === MODE.upgrades || this.mode === MODE.records) {
+      this.drawSoundButton(ctx);
     }
     if (this.mode === MODE.paused) {
       this.drawPauseScreen(ctx);
