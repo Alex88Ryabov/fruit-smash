@@ -143,6 +143,13 @@ class Net {
     return url ? url + '#r=' + this.token : this.token;
   }
 
+  // на CrazyGames игра живёт в iframe на их CDN: своя ссылка туда не приведёт,
+  // поэтому просим у площадки ссылку на страницу игры с параметром комнаты
+  resolveInviteLink() {
+    const plain = this.inviteLink;
+    return CG.inviteLink({ r: this.token }).then((link) => link || plain);
+  }
+
   setStatus(status, text) {
     this.status = status;
     this.handlers.onStatus(status, text);
@@ -170,7 +177,7 @@ class Net {
       this.revives = 0;
       this.setStatus('waiting', this.rebuilt ? t('net.newRoom') : t('net.ready'));
       this.rebuilt = false;
-      this.handlers.onInvite(this.inviteLink);
+      this.resolveInviteLink().then((link) => this.handlers.onInvite(link));
       publicIp().then((ip) => { this.myIp = ip; });
     });
 

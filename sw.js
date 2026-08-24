@@ -12,6 +12,7 @@ const FILES = [
   './js/campaign.js',
   './js/save.js',
   './js/audio.js',
+  './js/cg.js',
   './js/net.js',
   './js/art.js',
   './js/entities.js',

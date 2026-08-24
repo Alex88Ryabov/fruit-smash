@@ -107,6 +107,9 @@ class Game {
 
     this.role = 'solo';
     this.localIndex = 0;
+    // события площадки: следим за сменой режима и докладываем начало и конец геймплея
+    this.cgPlaying = false;
+    this.cgLoaded = false;
     this.netStatus = 'offline';
     this.netMessage = '';
     this.remoteInputs = [];
@@ -241,6 +244,12 @@ class Game {
     };
     window.addEventListener('hashchange', joinFromHash);
     joinFromHash();
+
+    // приглашение с площадки CrazyGames приходит не в hash, а параметром их ссылки
+    const cgRoom = CG.inviteParam('r');
+    if (cgRoom && this.net.role === 'solo') {
+      this.net.join(cgRoom);
+    }
   }
 
   onNetStatus(status, text) {
@@ -677,6 +686,7 @@ class Game {
       this.save.recordLevel(plan.id, stars, seeds);
       xp = this.grantXp(stars * 20 + this.levelKills);
       this.perks = this.save.perks();
+      CG.happytime();
     }
     this.result = { success, stars, seeds, xp, rankUp: this.rankUp, reason, plan, goals };
     this.mode = MODE.result;
@@ -1176,6 +1186,10 @@ class Game {
     this.combo += 1;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
     this.shake = enemy.isBoss ? 22 : 8;
+    // добитый босс бесконечного режима — удачный момент; в кампании его отметит пройденный уровень
+    if (enemy.isBoss && !this.level) {
+      CG.happytime();
+    }
     this.fx(enemy.type.key === 'mango' ? 'gold' : 'kill', enemy.x, enemy.y, enemy.type.tint);
     this.say(enemy.x, enemy.y, '+' + formatScore(gained), enemy.type.tint, enemy.isBoss ? 40 : 26);
     this.dropPickups(enemy);
@@ -2852,9 +2866,26 @@ class Game {
     this.last = now;
     this.update(dt);
     this.draw();
+    if (!this.cgLoaded && HERO_ART.ready) {
+      this.cgLoaded = true;
+      CG.loadingStop();
+    }
+    // геймплей для площадки — бой и заставка волны; меню, пауза и итоги — перерыв
+    const playing = this.mode === MODE.playing || this.mode === MODE.banner;
+    if (playing !== this.cgPlaying) {
+      this.cgPlaying = playing;
+      if (playing) {
+        CG.gameplayStart();
+      } else {
+        CG.gameplayStop();
+      }
+    }
     requestAnimationFrame((t) => this.loop(t));
   }
 }
 
-// инстанс наружу: удобно ковырять баланс прямо из консоли браузера
-window.game = new Game(document.getElementById('game'));
+// инстанс наружу: удобно ковырять баланс прямо из консоли браузера.
+// на CrazyGames игра стартует после инициализации их SDK, иначе — сразу
+CG.boot(() => {
+  window.game = new Game(document.getElementById('game'));
+});

@@ -1,9 +1,10 @@
 {
   "name": "fruktolet",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "Фруктолёт — аркада на canvas",
   "scripts": {
     "www": "node build-www.js",
+    "crazygames": "node build-crazygames.js",
     "android:sync": "node build-www.js && npx cap sync android"
   },
   "repository": {
