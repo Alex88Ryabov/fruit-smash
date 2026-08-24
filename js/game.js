@@ -65,9 +65,10 @@ function buildWave(wave, difficulty) {
   return queue;
 }
 
-// что выпадет из сбитого фрукта: лечение не роняем при полном здоровье
-function rollPickup(player) {
-  const options = Object.values(PICKUP_TYPES).filter((type) => type.key !== 'heal' || player.hp < player.maxHp);
+// что выпадет из сбитого фрукта: лечение не роняем, пока все живые игроки целы
+function rollPickup(players) {
+  const options = Object.values(PICKUP_TYPES)
+    .filter((type) => type.key !== 'heal' || players.some((p) => p.alive && p.hp < p.maxHp));
   const total = options.reduce((sum, type) => sum + type.weight, 0);
   let roll = Math.random() * total;
   for (const type of options) {
@@ -429,6 +430,12 @@ class Game {
     canvas.addEventListener('pointercancel', endTouch);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    // iOS Safari тащит страницу за пальцем и зумит по двойному тапу, из-за чего целиться невозможно.
+    // touch-action в CSS он уважает не всегда, поэтому глушим сами жесты; игру ведут pointer-события
+    for (const kind of ['touchstart', 'touchmove']) {
+      canvas.addEventListener(kind, (e) => e.preventDefault(), { passive: false });
+    }
+
     window.addEventListener('keydown', (e) => {
       if (e.repeat) {
         return;
@@ -660,7 +667,8 @@ class Game {
   }
 
   aimAngleFor(player) {
-    return Math.atan2(this.pointer.y - (player.y - 52), this.pointer.x - player.x);
+    const origin = player.aimOrigin;
+    return Math.atan2(this.pointer.y - origin.y, this.pointer.x - origin.x);
   }
 
   // оттяжка пальцем: вектор от текущей точки к точке касания задаёт угол и силу
@@ -748,14 +756,15 @@ class Game {
     const speed = lerp(CONFIG.minThrowSpeed, CONFIG.maxThrowSpeed, easeOutCubic(charge))
       * weapon.speedMul * (1 + (player.level - 1) * 0.06);
 
+    const origin = player.aimOrigin;
     for (let i = 0; i < weapon.shots; i++) {
       const offset = weapon.shots === 1
         ? rand(-weapon.spread, weapon.spread)
         : (i - (weapon.shots - 1) / 2) * weapon.spread;
       const a = player.aim + offset;
       const shot = new Projectile(
-        player.x + Math.cos(a) * 36,
-        player.y - 52 + Math.sin(a) * 36,
+        origin.x + Math.cos(a) * 36,
+        origin.y + Math.sin(a) * 36,
         Math.cos(a) * speed,
         Math.sin(a) * speed,
         weapon,
@@ -794,7 +803,7 @@ class Game {
   }
 
   // урон по площади: взрыв ананаса и бомба-бонус
-  blast(x, y, radius, damage, skip = null) {
+  blast(x, y, radius, damage, skip = null, owner = null) {
     this.fx('explode', x, y);
     this.waves.push(new Shockwave(x, y, radius));
     for (const enemy of this.enemies) {
@@ -802,7 +811,7 @@ class Game {
         continue;
       }
       if (circlesHit(x, y, radius, enemy.x, enemy.y, enemy.r) && enemy.hit(damage) === 'killed') {
-        this.killEnemy(enemy);
+        this.killEnemy(enemy, owner);
       }
     }
     for (const hazard of this.hazards) {
@@ -881,11 +890,11 @@ class Game {
 
   // ---------- бонусы ----------
 
-  dropPickups(enemy, player) {
+  dropPickups(enemy) {
     const chance = enemy.type.dropChance * this.perks.dropMul;
     const count = chance >= 1 ? Math.floor(chance) : (Math.random() < chance ? 1 : 0);
     for (let i = 0; i < count; i++) {
-      const pickup = new Pickup(rollPickup(player), enemy.x + rand(-20, 20), enemy.y);
+      const pickup = new Pickup(rollPickup(this.activePlayers), enemy.x + rand(-20, 20), enemy.y);
       pickup.id = this.nextId++;
       this.pickups.push(pickup);
     }
@@ -931,7 +940,7 @@ class Game {
     }
 
     if (type.key === 'bomb') {
-      this.blast(CONFIG.width / 2, CONFIG.height / 2, 900, CONFIG.bombDamage);
+      this.blast(CONFIG.width / 2, CONFIG.height / 2, 900, CONFIG.bombDamage, null, player);
       return;
     }
 
@@ -992,6 +1001,11 @@ class Game {
       case 'upgrade':
         this.sound.upgrade();
         this.burst(x, y, color, 14);
+        break;
+      case 'rage':
+        this.sound.rage();
+        this.burst(x, y, '#ff7b2d', 26);
+        this.shake = Math.max(this.shake, 10);
         break;
       case 'throw':
         this.sound.throwShot(0.6);
@@ -1065,6 +1079,10 @@ class Game {
     player.hp -= 1;
     player.invuln = CONFIG.invulnTime;
     player.setMood('hurt', 1);
+    if (!player.raging) {
+      // удар выбивает половину накопленной злости
+      player.rage *= 0.5;
+    }
     this.tookDamage = true;
     this.combo = 0;
     this.fx('hurt', x, y);
@@ -1117,8 +1135,20 @@ class Game {
     return enemy;
   }
 
-  killEnemy(enemy) {
-    const owner = this.players[0];
+  // сбитый фрукт наполняет шкалу ярости того, кто его сбил
+  addRage(player, amount) {
+    if (!player || !player.active || !player.alive || player.raging) {
+      return;
+    }
+    player.rage = Math.min(1, player.rage + amount);
+    if (player.rage >= 1) {
+      player.rageTimer = CONFIG.rageTime;
+      this.fx('rage', player.x, player.y - 80);
+      this.say(player.x, player.y - 130, t('fx.rage'), '#ff7b2d', 30);
+    }
+  }
+
+  killEnemy(enemy, owner = null) {
     const gained = enemy.type.score * this.multiplier;
     this.score += gained;
     this.killed += 1;
@@ -1128,16 +1158,20 @@ class Game {
     this.shake = enemy.isBoss ? 22 : 8;
     this.fx(enemy.type.key === 'mango' ? 'gold' : 'kill', enemy.x, enemy.y, enemy.type.tint);
     this.say(enemy.x, enemy.y, '+' + formatScore(gained), enemy.type.tint, enemy.isBoss ? 40 : 26);
-    this.dropPickups(enemy, owner);
+    this.dropPickups(enemy);
+    if (owner) {
+      owner.setMood('happy', 0.7);
+      this.addRage(owner, enemy.isBoss ? 0.3 : CONFIG.ragePerKill);
+    }
 
     if (enemy.hunted && this.objective) {
       this.objective.huntedLeft -= 1;
       this.say(enemy.x, enemy.y - 44, t('fx.targetDown'), '#ff4d6d', 24);
     }
 
-    // модификаторы сада: кислотная лужа под ногами и брызги от гнилья
+    // модификаторы сада: сок сбитого фрукта капает вниз и растекается лужей, гнильё брызжет в стороны
     if (this.modifier === 'puddles' && !enemy.isBoss) {
-      this.spawnHazard('puddle', enemy.x, CONFIG.groundY - 6);
+      this.spawnHazard('drip', enemy.x, Math.min(enemy.y, CONFIG.groundY - 60), rand(-25, 25), 40);
     }
     if (this.modifier === 'rotten') {
       for (let i = -1; i <= 1; i++) {
@@ -1242,7 +1276,7 @@ class Game {
     }
     if (!input.c && player.charging) {
       player.charging = false;
-      if (!player.weapon.autoFire) {
+      if (!player.weapon.autoFire && !player.raging) {
         this.throwShot(player, player.charge);
       }
       player.charge = 0;
@@ -1260,9 +1294,9 @@ class Game {
       player.charge = clamp(input.p, 0, 1);
     }
 
-    // скорострельное оружие лупит очередью, пока держат кнопку
-    if (player.charging && player.weapon.autoFire && player.cooldown <= 0) {
-      this.throwShot(player, 0.85);
+    // скорострельное оружие лупит очередью, пока держат кнопку; в ярости так работает всё
+    if (player.charging && (player.weapon.autoFire || player.raging) && player.cooldown <= 0) {
+      this.throwShot(player, player.raging ? 1 : 0.85);
     }
   }
 
@@ -1318,6 +1352,7 @@ class Game {
       }
       const input = i === this.localIndex ? this.consumeInput() : (this.remoteInputs[i] || IDLE_INPUT);
       this.updatePlayer(player, input, dt);
+      player.animate(dt);
     });
 
     // ливень гоняет ветер туда-сюда прямо посреди уровня
@@ -1377,7 +1412,7 @@ class Game {
           continue;
         }
         if (enemy.hit(1) === 'killed') {
-          this.killEnemy(enemy);
+          this.killEnemy(enemy, player);
         } else {
           this.fx('hit', enemy.x, enemy.y);
           enemy.mode = 'recover';
@@ -1402,14 +1437,10 @@ class Game {
             continue;
           }
           if (shot.weapon.blast) {
-            this.blast(shot.x, shot.y, shot.weapon.blast, shot.damage, enemy);
+            this.blast(shot.x, shot.y, shot.weapon.blast, shot.damage, enemy, this.players[shot.owner]);
           }
           if (result === 'killed') {
-            this.killEnemy(enemy);
-            const shooter = this.players[shot.owner];
-            if (shooter) {
-              shooter.setMood('happy', 0.7);
-            }
+            this.killEnemy(enemy, this.players[shot.owner]);
           } else {
             this.fx('hit', shot.x, shot.y);
           }
@@ -1417,15 +1448,23 @@ class Game {
       }
       if (shot.dead && !shot.hitSomething) {
         if (shot.weapon.blast) {
-          this.blast(shot.x, clamp(shot.y, 0, CONFIG.groundY), shot.weapon.blast, shot.damage);
+          this.blast(shot.x, clamp(shot.y, 0, CONFIG.groundY), shot.weapon.blast, shot.damage, null, this.players[shot.owner]);
         }
         this.burst(shot.x, clamp(shot.y, 0, CONFIG.groundY), '#6b4a86', 8);
         this.combo = 0;
       }
     }
 
+    const landedDrips = [];
     for (const hazard of this.hazards) {
       hazard.update(slowDt, this.wind);
+      // капля долетела до земли — на её месте растекается лужа
+      if (hazard.kind === 'drip') {
+        if (hazard.dead && hazard.landed) {
+          landedDrips.push(hazard.x);
+        }
+        continue;
+      }
       for (const player of this.players) {
         if (hazard.dead || !player.active || !player.alive) {
           continue;
@@ -1447,6 +1486,25 @@ class Game {
         this.damagePlayer(player, player.x, player.y - 40);
       }
     }
+    for (const x of landedDrips) {
+      this.spawnHazard('puddle', x, CONFIG.groundY - 6);
+    }
+
+    // герой пугается того, что летит ему на голову
+    for (const player of this.players) {
+      if (!player.active || !player.alive) {
+        continue;
+      }
+      let danger = this.enemies.some((enemy) => enemy.mode === 'dive'
+        && Math.abs(enemy.x - player.x) < 170 && enemy.y < player.y - 20);
+      if (!danger) {
+        danger = this.hazards.some((hazard) => hazard.kind !== 'peel' && hazard.kind !== 'drip'
+          && Math.abs(hazard.x - player.x) < 90 && hazard.y > player.y - 340 && hazard.y < player.y - 30);
+      }
+      if (danger) {
+        player.scared = 0.4;
+      }
+    }
 
     for (const pickup of this.pickups) {
       pickup.update(dt, this.wind);
@@ -1459,23 +1517,6 @@ class Game {
           this.applyPickup(pickup, player);
         }
       }
-    }
-
-    // герой пугается того, что летит ему на голову, и звереет на длинном комбо
-    for (const player of this.players) {
-      if (!player.active || !player.alive) {
-        continue;
-      }
-      let danger = this.enemies.some((enemy) => enemy.mode === 'dive'
-        && Math.abs(enemy.x - player.x) < 170 && enemy.y < player.y - 20);
-      if (!danger) {
-        danger = this.hazards.some((hazard) => hazard.kind !== 'peel'
-          && Math.abs(hazard.x - player.x) < 90 && hazard.y > player.y - 340 && hazard.y < player.y - 30);
-      }
-      if (danger) {
-        player.scared = 0.4;
-      }
-      player.rage = this.combo >= CONFIG.comboStep * 2;
     }
 
     this.enemies = this.enemies.filter((e) => !e.dead);
@@ -1518,8 +1559,9 @@ class Game {
       q: this.queue.length,
       p: this.players.map((p) => [
         Math.round(p.x), round1(p.aim), p.charging ? 1 : 0, round1(p.charge), p.hp,
-        p.shield ? 1 : 0, round1(p.slip), round1(p.invuln), p.facing, round1(p.bob),
-        p.weapon.key, p.ammo, p.level, p.maxHp, Math.round(p.y), p.faceMood(), round1(p.throwAnim), p.active ? 1 : 0,
+        p.shield ? 1 : 0, round1(p.slip), round1(p.invuln), round1(p.move),
+        p.weapon.key, p.ammo, p.level, p.maxHp, Math.round(p.y), round1(p.throwAnim), p.active ? 1 : 0,
+        round1(p.rage), round1(p.rageTimer), p.faceMood(),
       ]),
       e: this.enemies.map((e) => [e.id, e.type.key, Math.round(e.x), Math.round(e.y), e.hp, e.maxHp, round1(e.t), e.mode, e.shieldOn ? 1 : 0]),
       s: this.shots.map((s) => [s.id, s.weapon.key, Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy)]),
@@ -1562,20 +1604,19 @@ class Game {
       p.shield = Boolean(row[5]);
       p.slip = row[6];
       p.invuln = row[7];
-      p.facing = row[8];
-      p.bob = row[9];
-      p.weapon = WEAPONS[row[10]];
-      p.ammo = row[11];
-      p.level = row[12];
-      p.maxHp = row[13];
-      p.active = row[17] === undefined ? true : Boolean(row[17]);
-      p.ty = row[14];
-      // мимику присылает хост: у себя лицо считаем локально, чтобы не было задержки
-      if (i !== this.localIndex) {
-        p.moodName = row[15];
-        p.moodTimer = 0.25;
-        p.throwAnim = row[16];
-      }
+      p.move = row[8];
+      p.weapon = WEAPONS[row[9]];
+      p.ammo = row[10];
+      p.level = row[11];
+      p.maxHp = row[12];
+      p.ty = row[13];
+      // фазу броска присылает хост: между снимками гость докручивает её сам в animate()
+      p.throwAnim = row[14];
+      p.active = Boolean(row[15]);
+      p.rage = row[16];
+      p.rageTimer = row[17];
+      // лицо тоже присылает хост: у гостя нет чужих событий вроде подбора бонуса
+      p.setMood(row[18], 0.25);
     });
 
     this.enemies = this.syncById(this.enemies, snap.e, (row) => {
@@ -1663,6 +1704,8 @@ class Game {
         j: input.j,
       });
       this.touchRelease = null;
+      // прыжок одноразовый: без сброса гость слал бы его в каждом пакете и скакал без остановки
+      this.jumpQueued = false;
     }
 
     // между снимками сглаживаем и досчитываем движение сами
@@ -1676,6 +1719,9 @@ class Game {
     const local = this.localPlayer;
     if (local) {
       local.aim = input.a;
+    }
+    for (const player of this.players) {
+      player.animate(dt);
     }
     for (const enemy of this.enemies) {
       enemy.x = damp(enemy.x, enemy.tx, 14, dt);
@@ -1710,7 +1756,8 @@ class Game {
     sky.addColorStop(0, palette.skyTop);
     sky.addColorStop(1, palette.skyBottom);
     ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    // с запасом за края: при тряске холст сдвинут, и точная заливка оставила бы полосу прошлого кадра
+    ctx.fillRect(-24, -24, CONFIG.width + 48, CONFIG.height + 48);
 
     const night = this.modifier === 'night' || palette.dark;
     ctx.fillStyle = night ? 'rgba(230,235,255,.8)' : 'rgba(255,236,170,.85)';
@@ -1880,7 +1927,8 @@ class Game {
     ctx.lineWidth = 3;
     ctx.setLineDash([8, 8]);
     ctx.beginPath();
-    ctx.moveTo(player.x, player.y - 52);
+    const origin = player.aimOrigin;
+    ctx.moveTo(origin.x, origin.y);
     ctx.lineTo(this.touch.x, this.touch.y);
     ctx.stroke();
     ctx.setLineDash([]);
@@ -1905,12 +1953,13 @@ class Game {
     const weapon = player.weapon;
     const touching = this.touch.active && this.touch.mode === 'aim';
     const pull = touching ? this.pull() : null;
-    const charge = weapon.autoFire ? 0.85 : (touching ? pull.power : player.charge);
+    const charge = player.raging ? 1 : weapon.autoFire ? 0.85 : (touching ? pull.power : player.charge);
     const speed = lerp(CONFIG.minThrowSpeed, CONFIG.maxThrowSpeed, easeOutCubic(charge))
       * weapon.speedMul * (1 + (player.level - 1) * 0.06);
     const angle = touching ? (pull.ready ? Math.atan2(pull.dy, pull.dx) : player.aim) : this.aimAngleFor(player);
-    let x = player.x + Math.cos(angle) * 36;
-    let y = player.y - 52 + Math.sin(angle) * 36;
+    const origin = player.aimOrigin;
+    let x = origin.x + Math.cos(angle) * 36;
+    let y = origin.y + Math.sin(angle) * 36;
     let vx = Math.cos(angle) * speed;
     let vy = Math.sin(angle) * speed;
     const dt = 1 / 60;
@@ -2057,6 +2106,24 @@ class Game {
     }
     ctx.restore();
 
+    // шкала ярости: наполняется сбитыми фруктами, полная — идёт время буйства
+    const ragePlayer = this.localPlayer;
+    const rageY = 96 + roster.length * rowStep + 2;
+    const rageK = ragePlayer.raging ? ragePlayer.rageTimer / CONFIG.rageTime : ragePlayer.rage;
+    ctx.save();
+    drawEmoji(ctx, '🔥', 33, rageY + 5, ragePlayer.raging ? 21 : 17);
+    ctx.fillStyle = 'rgba(10,8,23,.45)';
+    roundRect(ctx, 46, rageY, 110, 10, 5);
+    ctx.fill();
+    if (rageK > 0) {
+      ctx.fillStyle = ragePlayer.raging
+        ? (Math.sin(this.time * 12) > 0 ? '#ffd166' : '#ff5a1f')
+        : mixColor('#ff8c42', '#ff4d2d', rageK);
+      roundRect(ctx, 46, rageY, 110 * clamp(rageK, 0, 1), 10, 5);
+      ctx.fill();
+    }
+    ctx.restore();
+
     const effects = [];
     if (this.localPlayer.shield) {
       effects.push({ emoji: '🛡️', text: t('hud.shield') });
@@ -2069,7 +2136,7 @@ class Game {
     ctx.textBaseline = 'middle';
     ctx.font = '600 16px "Segoe UI", system-ui, sans-serif';
     effects.forEach((effect, i) => {
-      const y = 96 + roster.length * rowStep + i * 28;
+      const y = rageY + 24 + i * 28;
       drawEmoji(ctx, effect.emoji, 36, y, 22);
       ctx.fillStyle = PALETTE.hud;
       ctx.fillText(effect.text, 54, y + 1);
@@ -2644,7 +2711,9 @@ class Game {
     this.canvas.height = CONFIG.height * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.canvas.style.aspectRatio = CONFIG.width + ' / ' + CONFIG.height;
-    this.canvas.style.width = 'min(100%, ' + ((CONFIG.width / CONFIG.height) * 74).toFixed(1) + 'vh)';
+    // в приложении поле тянем почти во весь экран, на сайте оставляем место под подсказки
+    const frame = document.body.classList.contains('app') ? 92 : 74;
+    this.canvas.style.width = 'min(100%, ' + ((CONFIG.width / CONFIG.height) * frame).toFixed(1) + 'vh)';
   }
 
   loop(now) {

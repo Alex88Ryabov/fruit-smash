@@ -48,9 +48,14 @@
   <script src="js/save.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/net.js"></script>
+  <script src="js/art.js"></script>
   <script src="js/entities.js"></script>
   <script src="js/game.js"></script>
   <script>
+    // в обёртке Capacitor игра идёт как приложение: подсказки про мышь не нужны, поле шире
+    if (window.Capacitor) {
+      document.body.classList.add('app');
+    }
     // офлайн-режим включается только на сайте: из file:// service worker не регистрируется
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

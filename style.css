@@ -7,6 +7,14 @@ html, body {
   color: #e8e4ff;
   font-family: "Segoe UI", system-ui, sans-serif;
   overflow: hidden;
+  /* мобильный Safari тянет страницу за пальцем вместе с игрой — запрещаем прокрутку-резинку */
+  overscroll-behavior: none;
+}
+
+/* страница приколочена к экрану: без этого iOS всё равно возит её за пальцем */
+body {
+  position: fixed;
+  inset: 0;
 }
 
 .wrap {
@@ -29,6 +37,11 @@ canvas {
   box-shadow: 0 24px 60px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .08);
   touch-action: none;
   cursor: crosshair;
+  /* долгое нажатие не должно вызывать лупу и выделение */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .lobby {
@@ -137,4 +150,24 @@ canvas {
 @media (max-width: 760px) {
   .hint { font-size: 11px; }
   .lobby button, .lobby input { font-size: 13px; padding: 7px 12px; }
+}
+
+/* мобильное приложение: подсказки для мыши и клавиатуры там ни к чему */
+body.app .hint {
+  display: none;
+}
+
+body.app .wrap {
+  padding: 0;
+  gap: 6px;
+}
+
+/* в приложении поле без веб-рамки: скруглений и тени быть не должно */
+body.app canvas {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.app {
+  background: #1b1436;
 }

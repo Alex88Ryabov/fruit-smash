@@ -1,6 +1,6 @@
 // офлайн-кэш. Стратегия «сначала сеть»: пока интернет есть, игрок всегда получает
 // свежие файлы, а кэш выручает только офлайн. Кэш-первым нельзя — обновления не доезжают.
-const CACHE = 'fruktolet-v2';
+const CACHE = 'fruktolet-v3';
 const FILES = [
   './',
   './index.html',
@@ -13,9 +13,20 @@ const FILES = [
   './js/save.js',
   './js/audio.js',
   './js/net.js',
+  './js/art.js',
   './js/entities.js',
   './js/game.js',
   './js/vendor/peerjs.min.js',
+  './art/hero-body-1.png',
+  './art/hero-body-2.png',
+  './art/hero-body-3.png',
+  './art/hero-body-4.png',
+  './art/hero-arm-1.png',
+  './art/hero-arm-2.png',
+  './art/hero-arm-3.png',
+  './art/hero-arm-4.png',
+  './art/hero-forearm.png',
+  './art/hero-leg.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',

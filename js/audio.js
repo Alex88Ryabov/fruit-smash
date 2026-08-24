@@ -163,6 +163,12 @@ class SoundBox {
     });
   }
 
+  rage() {
+    this.tone({ freq: 90, toFreq: 260, type: 'sawtooth', dur: 0.5, gain: 0.28 });
+    this.noise({ dur: 0.65, gain: 0.26, cutoff: 700, sweepTo: 2600 });
+    this.tone({ freq: 55, toFreq: 42, type: 'square', dur: 0.5, gain: 0.2, delay: 0.06 });
+  }
+
   explode() {
     this.noise({ dur: 0.55, gain: 0.45, cutoff: 1400, sweepTo: 90 });
     this.tone({ freq: 160, toFreq: 40, type: 'sawtooth', dur: 0.4, gain: 0.24 });

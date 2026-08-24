@@ -90,7 +90,7 @@ class Net {
     this.guests = [];
     this.device = deviceId();
     this.myIp = '';
-    this.denied2 = false;
+    this.refused = false;
     this.revives = 0;
     this.tries = 0;
     this.rebuilt = false;
@@ -358,7 +358,7 @@ class Net {
     this.close();
     this.role = 'guest';
     this.token = token;
-    this.denied2 = false;
+    this.refused = false;
     this.setStatus('connecting', this.tries > 0 ? t('net.searching') : t('net.connecting'));
     this.peer = new window.Peer({ debug: 0 });
 
@@ -395,14 +395,14 @@ class Net {
       conn.on('close', () => {
         this.conn = null;
         // если хост уже отказал, причину отказа не затираем
-        if (!this.denied2) {
+        if (!this.refused) {
           this.setStatus('offline', t('net.closed'));
           this.handlers.onClose();
           this.retryJoin();
         }
       });
       conn.on('error', () => {
-        if (!this.denied2) {
+        if (!this.refused) {
           this.setStatus('error', t('net.dropped'));
         }
       });
@@ -418,7 +418,7 @@ class Net {
   }
 
   denied(reason) {
-    this.denied2 = true;
+    this.refused = true;
     this.setStatus('error', t('net.deny.' + reason));
     const peer = this.peer;
     this.peer = null;
