@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ФРУКТОЛЁТ — политика конфиденциальности</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 32px 20px 64px;
+      background: #17122c;
+      color: #efe8ff;
+      font: 16px/1.6 "Segoe UI", system-ui, sans-serif;
+    }
+    main { max-width: 720px; margin: 0 auto; }
+    h1 { color: #ffd166; font-size: 28px; }
+    h2 { color: #8ef6c5; font-size: 20px; margin-top: 36px; }
+    a { color: #4ecdc4; }
+    ul { padding-left: 20px; }
+    .updated { color: #b0a7d6; font-size: 14px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Политика конфиденциальности — ФРУКТОЛЁТ</h1>
+  <p class="updated">Обновлено: 19 августа 2026</p>
+
+  <p>ФРУКТОЛЁТ — аркада без регистрации и без аккаунтов. Игра не собирает персональные данные, не показывает рекламу и не подключает системы аналитики.</p>
+
+  <h2>Что хранится на устройстве</h2>
+  <p>Прогресс игры хранится локально, в памяти устройства (<code>localStorage</code>), и никуда не отправляется:</p>
+  <ul>
+    <li>очки, рекорд, пройденные уровни и звёзды;</li>
+    <li>семечки и купленные улучшения;</li>
+    <li>выбранный язык;</li>
+    <li>случайная метка браузера — нужна, чтобы нельзя было зайти в кооп по собственной же ссылке-приглашению.</li>
+  </ul>
+  <p>Удаление игры стирает эти данные вместе с ней.</p>
+
+  <h2>Совместная игра</h2>
+  <p>Кооп работает напрямую между устройствами по WebRTC — своего сервера у игры нет, игровые данные на сторонние серверы не попадают. Чтобы два устройства нашли друг друга, используются сторонние сервисы:</p>
+  <ul>
+    <li><strong>PeerJS Cloud</strong> (0.peerjs.com) — обмен техническими данными о соединении;</li>
+    <li><strong>публичный STUN-сервер Google</strong> (stun.l.google.com) — определение внешнего адреса устройства.</li>
+  </ul>
+  <p>При таком соединении IP-адрес устройства становится известен этим сервисам и участникам вашей игры — это устройство работы любой связи напрямую. Комната живёт, только пока игра открыта, и попасть в неё можно исключительно по приглашению, которое вы отправляете сами.</p>
+  <p>Если в кооп не играть, игра работает полностью офлайн и никуда не обращается.</p>
+
+  <h2>Дети</h2>
+  <p>В игре нет чатов, покупок и пользовательских публикаций. Единственное, чем можно обменяться, — ссылка-приглашение в совместную игру, которую игрок отправляет знакомому сам.</p>
+
+  <h2>Связь</h2>
+  <p>Вопросы по игре и по этой политике: <a href="mailto:ПОЧТА@ПРИМЕР">ПОЧТА@ПРИМЕР</a></p>
+
+  <h2>Privacy policy (English)</h2>
+  <p>Fruit Smash collects no personal data, shows no ads and uses no analytics. Game progress (score, stars, seeds, upgrades, language and a random browser label) is stored locally on the device and never leaves it. Co-op play is peer-to-peer over WebRTC: to pair two devices the game uses the third-party PeerJS Cloud broker and Google's public STUN server, so the device IP becomes visible to those services and to the players you invite — this is inherent to any direct connection. No game data is stored on those servers. Rooms exist only while the game is open and can be joined by invitation only. Contact: <a href="mailto:ПОЧТА@ПРИМЕР">ПОЧТА@ПРИМЕР</a></p>
+
+  <h2>Політика конфіденційності (українською)</h2>
+  <p>Фруктоліт не збирає персональних даних, не показує реклами та не використовує аналітику. Прогрес гри зберігається локально на пристрої й нікуди не надсилається. Спільна гра працює напряму між пристроями через WebRTC: щоб пристрої знайшли одне одного, використовуються сторонній брокер PeerJS Cloud і публічний STUN-сервер Google, тому IP-адреса пристрою стає відома цим сервісам і учасникам вашої гри. Ігрові дані на ці сервери не потрапляють. Кімната живе, лише поки гра відкрита, і потрапити до неї можна тільки за запрошенням. Зв'язок: <a href="mailto:ПОЧТА@ПРИМЕР">ПОЧТА@ПРИМЕР</a></p>
+</main>
+</body>
+</html>

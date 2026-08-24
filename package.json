@@ -1,0 +1,28 @@
+{
+  "name": "fruktolet",
+  "version": "1.9.0",
+  "description": "Фруктолёт — аркада на canvas",
+  "scripts": {
+    "www": "node build-www.js",
+    "android:sync": "node build-www.js && npx cap sync android"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alex88Ryabov/fruit-smash.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Alex88Ryabov/fruit-smash/issues"
+  },
+  "homepage": "https://github.com/Alex88Ryabov/fruit-smash#readme",
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0"
+  },
+  "private": true
+}

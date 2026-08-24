@@ -1,0 +1,8 @@
+{
+  "appId": "com.alexryabov.fruktolet",
+  "appName": "Фруктолёт",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#3b2f7a"
+  }
+}

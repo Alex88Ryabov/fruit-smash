@@ -2,3 +2,16 @@
 .idea/
 node_modules/
 *.zip
+
+# рабочие файлы агента в публичный репозиторий не уходят
+.claude/
+
+# мобильная обёртка: сборочный мусор и ключ подписи в репозиторий не уходят
+www/
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/keystore.properties
+*.jks
+*.keystore
