@@ -167,7 +167,8 @@ class Projectile {
 }
 
 // всё, чем фрукты отбиваются: косточка, брызги сока, прицельная семечка,
-// кислотное облако, лужа и банановая кожура под ноги
+// кислотное облако, лужа и банановая кожура под ноги.
+// drip — безвредная капля сока из сбитого фрукта: долетает до земли и растекается лужей
 class Hazard {
   constructor(kind, x, y, vx = 0, vy = 0) {
     this.id = 0;
@@ -193,6 +194,9 @@ class Hazard {
     } else if (kind === 'seed') {
       this.r = 11;
       this.life = 6;
+    } else if (kind === 'drip') {
+      this.r = 13;
+      this.life = 5;
     } else if (kind === 'peel') {
       this.r = 22;
       this.life = 9;
@@ -209,7 +213,7 @@ class Hazard {
     if (this.kind === 'acid') {
       return 0;
     }
-    return this.kind === 'juice' ? 0.6 : 0.55;
+    return this.kind === 'juice' || this.kind === 'drip' ? 0.6 : 0.55;
   }
 
   update(dt, wind) {
@@ -312,6 +316,11 @@ class Hazard {
 
     if (this.kind === 'juice') {
       drawDroplet(ctx, this.x, this.y, this.r, '#ff6b9d');
+      return;
+    }
+
+    if (this.kind === 'drip') {
+      drawDroplet(ctx, this.x, this.y, this.r, '#a8e063');
       return;
     }
 
@@ -613,51 +622,15 @@ class Enemy {
   }
 }
 
-// внешность героя: кожа, волосы и мелочи лица в одном месте
-const LOOK = {
-  skin: '#ffcd94',
-  skinShade: '#e8ab7c',
-  line: '#2a1b3d',
-  eye: '#2a1b3d',
-  brow: '#4a2f1c',
-  mouth: '#a8402f',
-  tongue: '#e0607a',
-  blush: 'rgba(255,120,120,.4)',
-  pants: '#33509e',
-  pantsDark: '#263d7d',
-  bag: '#2f4a8f',
-  bagStrap: '#3f5fae',
-  shoe: '#f2f2f7',
-  shoeDark: '#d63d5e',
-};
-
-// заливка с обводкой: контур делает персонажа рисованным, а не сгенерированным
-function inked(ctx, path, fill, width = 3) {
-  ctx.beginPath();
-  path();
-  ctx.fillStyle = fill;
-  ctx.fill();
-  ctx.strokeStyle = LOOK.line;
-  ctx.lineWidth = width;
-  ctx.lineJoin = 'round';
-  ctx.stroke();
-}
-
-// четыре набора цветов: игроков в комнате может быть до четырёх
-const PLAYER_SKINS = [
-  { shirt: '#4ecdc4', hair: '#7a4a24', hairLight: '#a06a34' },
-  { shirt: '#ff8fb1', hair: '#b0702c', hairLight: '#d09045' },
-  { shirt: '#ffd166', hair: '#4a2c14', hairLight: '#6b4226' },
-  { shirt: '#a98bdc', hair: '#8a3a1e', hairLight: '#b05a34' },
-];
+// четыре цвета футболки: игроков в комнате может быть до четырёх, у каждого своя нарезка тела
+const PLAYER_SKINS = ['#4ecdc4', '#ff8fb1', '#ffd166', '#a98bdc'];
+// цвет рукава из нарезки руки: им закрашивается плечо, когда рукав повёрнут замахом вверх
+const SLEEVE_COLORS = ['#4ad1d4', '#ff1f63', '#ffbc1f', '#7f53cb'];
 
 class Player {
   constructor(index = 0) {
-    const skin = PLAYER_SKINS[index % PLAYER_SKINS.length];
     this.index = index;
-    this.color = skin.shirt;
-    this.hair = skin.hair;
-    this.hairLight = skin.hairLight;
+    this.color = PLAYER_SKINS[index % PLAYER_SKINS.length];
     this.name = 'P' + (index + 1);
     this.active = true;
     this.x = clamp(CONFIG.width / 2 + [0, 90, -90, 180][index % 4], 60, CONFIG.width - 60);
@@ -669,25 +642,64 @@ class Player {
     this.cooldown = 0;
     this.invuln = 0;
     this.slip = 0;
-    this.bob = 0;
-    this.facing = 1;
+    this.move = 0;
     this.vy = 0;
     this.onGround = true;
     this.throwAnim = 0;
-    this.moodName = 'calm';
-    this.moodTimer = 0;
-    this.scared = 0;
-    this.rage = false;
     this.maxHp = CONFIG.maxHp;
     this.hp = this.maxHp;
     this.weapon = WEAPONS.potato;
     this.level = 1;
     this.ammo = 0;
     this.shield = false;
+    this.moodName = 'calm';
+    this.moodTimer = 0;
+    this.scared = 0;
+    // шкала ярости 0..1; полная превращается в таймер буйства
+    this.rage = 0;
+    this.rageTimer = 0;
+
+    // состояние анимации: считается локально у хоста и у гостя из игрового состояния, по сети не ездит
+    this.t = 0;
+    this.bob = 0;
+    this.run = 0;
+    this.air = 0;
+    this.wasOnGround = true;
+    this.stretch = 0;
+    this.wind = 0;
+    this.lean = 0;
+    this.farAng = Math.PI / 2;
+    // кисть бросающей руки относительно плеча и сглаженный угол плечевого звена; герой смотрит вправо
+    this.hand = polar(1.28, 31.5);
+    this.upperAng = 1.28;
   }
 
   get alive() {
     return this.hp > 0;
+  }
+
+  get raging() {
+    return this.rageTimer > 0;
+  }
+
+  // куда смотрит герой: бросок влево зеркалит всю фигуру
+  get facing() {
+    return Math.cos(this.aim) < 0 ? -1 : 1;
+  }
+
+  // точка, от которой считаем прицел и запускаем снаряд: уровень плеча по центру героя
+  get aimOrigin() {
+    return { x: this.x, y: this.y + HERO.shoulder.y };
+  }
+
+  // прицел в системе фигуры, смотрящей вправо. выше этого угла рука не поднимается:
+  // иначе рукав ложится на лицо
+  get facingAim() {
+    let aim = this.facing < 0 ? Math.PI - this.aim : this.aim;
+    if (aim > Math.PI) {
+      aim -= TAU;
+    }
+    return clamp(aim, -1.32, 0.5);
   }
 
   jump() {
@@ -699,13 +711,13 @@ class Player {
     return false;
   }
 
+  throwPose() {
+    this.throwAnim = 1;
+  }
+
   setMood(name, time) {
     this.moodName = name;
     this.moodTimer = time;
-  }
-
-  throwPose() {
-    this.throwAnim = 1;
   }
 
   // выражение лица собирается из состояния: что важнее, то и на морде
@@ -713,20 +725,20 @@ class Player {
     if (this.slip > 0) {
       return 'dizzy';
     }
+    if (this.raging) {
+      return 'rage';
+    }
     if (this.moodTimer > 0) {
       return this.moodName;
     }
     if (this.scared > 0) {
       return 'scared';
     }
-    if (this.charging) {
+    if (this.charging && !this.weapon.autoFire) {
       return 'focused';
     }
     if (!this.onGround) {
       return 'jump';
-    }
-    if (this.rage) {
-      return 'angry';
     }
     return 'calm';
   }
@@ -736,10 +748,9 @@ class Player {
       this.slip -= dt;
       move = 0;
     }
+    this.move = move;
     this.x = clamp(this.x + move * CONFIG.playerSpeed * dt, 40, CONFIG.width - 40);
-    if (this.onGround) {
-      this.bob += Math.abs(move) * dt * 12;
-    } else {
+    if (!this.onGround) {
       this.vy += CONFIG.playerGravity * dt;
       this.y += this.vy * dt;
       if (this.y >= CONFIG.groundY) {
@@ -748,14 +759,37 @@ class Player {
         this.onGround = true;
       }
     }
-    if (move !== 0) {
-      this.facing = move;
-    }
     if (this.cooldown > 0) {
       this.cooldown -= dt;
     }
     if (this.invuln > 0) {
       this.invuln -= dt;
+    }
+    if (this.charging && !this.weapon.autoFire && !this.raging) {
+      this.charge = clamp(this.charge + dt / CONFIG.chargeTime, 0, 1);
+    }
+  }
+
+  // движение частей тела: всё сглажено, чтобы рука и корпус не прыгали из позы в позу
+  animate(dt) {
+    this.t += dt;
+    const moving = this.onGround && Math.abs(this.move) > 0.05;
+    if (moving) {
+      this.bob += Math.abs(this.move) * 12 * dt;
+    } else {
+      // остановился — шаг дошагивается до стойки «ноги вместе», а не замирает на полушаге
+      this.bob = damp(this.bob, Math.round(this.bob / Math.PI) * Math.PI, 14, dt);
+    }
+    this.run = damp(this.run, moving ? 1 : 0, 10, dt);
+    this.air = damp(this.air, this.onGround ? 0 : 1, 14, dt);
+    if (this.onGround !== this.wasOnGround) {
+      // отрыв вытягивает фигуру, приземление сплющивает, дальше форма пружинит обратно
+      this.stretch = this.onGround ? -1 : 0.7;
+      this.wasOnGround = this.onGround;
+    }
+    this.stretch = damp(this.stretch, 0, 9, dt);
+    if (this.throwAnim > 0) {
+      this.throwAnim = Math.max(0, this.throwAnim - dt / 0.3);
     }
     if (this.moodTimer > 0) {
       this.moodTimer -= dt;
@@ -763,281 +797,331 @@ class Player {
     if (this.scared > 0) {
       this.scared -= dt;
     }
-    if (this.throwAnim > 0) {
-      this.throwAnim = Math.max(0, this.throwAnim - dt / 0.26);
+    if (this.rageTimer > 0) {
+      this.rageTimer -= dt;
+      if (this.rageTimer <= 0) {
+        this.rage = 0;
+      }
     }
-    if (this.charging && !this.weapon.autoFire) {
-      this.charge = clamp(this.charge + dt / CONFIG.chargeTime, 0, 1);
+    const winding = this.charging && !this.weapon.autoFire && !this.raging;
+    this.wind = damp(this.wind, winding ? 0.3 + 0.7 * this.charge : 0, 14, dt);
+
+    // на броске кисть выстреливает к цели, в остальное время плавно плывёт за позой
+    const target = this.handTarget();
+    const rate = this.throwAnim > 0.45 ? 38 : 13;
+    this.hand.x = damp(this.hand.x, target.x, rate, dt);
+    this.hand.y = damp(this.hand.y, target.y, rate, dt);
+    const ik = elbowFor(this.hand.x, this.hand.y, ARM.upperLen, ARM.foreLen);
+    this.upperAng = damp(this.upperAng, Math.atan2(ik.ey, ik.ex), rate + 6, dt);
+
+    // дальняя рука машет в шаге, уходит вперёд для равновесия на замахе и назад на броске
+    const swing = Math.sin(this.bob) * this.run;
+    const far = Math.PI / 2 + 0.35 * swing - 0.35 * this.wind + 0.3 * Math.max(0, this.throwAnim - 0.45);
+    // сильнее не поднимаем: выше открывается голый срез предплечья, у левой руки рукава-куска нет
+    this.farAng = damp(this.farAng, lerp(far, 0.9, this.air), 16, dt);
+
+    // корпус отклоняется назад на замахе, подаётся вперёд на броске и по ходу бега
+    const travel = Math.sign(this.move) * this.facing;
+    const lean = -0.1 * this.wind + 0.16 * Math.max(0, this.throwAnim - 0.3) + 0.06 * travel * this.run;
+    this.lean = damp(this.lean, lean, 20, dt);
+  }
+
+  // куда тянется кисть бросающей руки: в покое висит у бедра, на замахе идёт по дуге
+  // вперёд-вверх и за голову, на броске выстреливает по прицелу, проносится вперёд-вниз и возвращается
+  handTarget() {
+    const aim = this.facingAim;
+    const reach = ARM.upperLen + ARM.foreLen;
+    if (this.throwAnim > 0.75) {
+      return polar(aim, reach * 0.97);
     }
+    if (this.throwAnim > 0.45) {
+      return polar(aim + 0.9, reach * 0.85);
+    }
+    // очередь и ярость: рука вытянута по прицелу, снаряды вылетают из кулака
+    if (this.charging && (this.weapon.autoFire || this.raging)) {
+      return polar(aim, reach * 0.92);
+    }
+    const swing = Math.sin(this.bob) * this.run;
+    const rest = 1.28 - 0.35 * swing - 0.55 * this.air;
+    const cocked = -1.97 + 0.6 * (aim + 0.785);
+    return polar(lerp(rest, cocked, this.wind), lerp(30, 24.5, this.wind));
   }
 
-  drawHead(ctx, hx, hy, r, mood) {
-    inked(ctx, () => {
-      ctx.arc(hx - r + 2, hy + 5, 5.5, 0, TAU);
-    }, LOOK.skinShade, 2.5);
-    inked(ctx, () => {
-      ctx.arc(hx + r - 2, hy + 5, 5.5, 0, TAU);
-    }, LOOK.skinShade, 2.5);
-
-    inked(ctx, () => {
-      ctx.ellipse(hx, hy, r, r * 1.06, 0, 0, TAU);
-    }, LOOK.skin, 3);
-
-    this.drawFace(ctx, hx, hy, r, mood);
-    this.drawHair(ctx, hx, hy, r);
-    // брови рисуем поверх чёлки, иначе всё выражение прячется под волосами
-    this.drawBrows(ctx, hx, hy, mood);
-  }
-
-  // причёска: шапка волос закрывает лоб и виски, сверху лежит косая прядь
-  drawHair(ctx, hx, hy, r) {
-    inked(ctx, () => {
-      ctx.moveTo(hx - r - 2, hy + 7);
-      ctx.quadraticCurveTo(hx - r - 4, hy - r * 1.08, hx - r * 0.15, hy - r * 1.24);
-      ctx.quadraticCurveTo(hx + r * 1.05, hy - r * 1.18, hx + r + 2, hy + 4);
-      ctx.lineTo(hx + r * 0.74, hy + 2);
-      ctx.quadraticCurveTo(hx + r * 0.62, hy - r * 0.5, hx - r * 0.05, hy - r * 0.44);
-      ctx.quadraticCurveTo(hx - r * 0.74, hy - r * 0.38, hx - r * 0.82, hy + 7);
-      ctx.closePath();
-    }, this.hair, 3);
-
-    // прядь лежит на голове, а не торчит рогом
-    inked(ctx, () => {
-      ctx.moveTo(hx - r * 0.25, hy - r * 1.2);
-      ctx.quadraticCurveTo(hx + r * 0.55, hy - r * 1.44, hx + r * 0.95, hy - r * 1.0);
-      ctx.quadraticCurveTo(hx + r * 0.45, hy - r * 1.1, hx + r * 0.05, hy - r * 1.13);
-      ctx.closePath();
-    }, this.hair, 3);
-
-    ctx.save();
-    ctx.globalAlpha = 0.45;
-    ctx.fillStyle = this.hairLight;
-    ctx.beginPath();
-    ctx.ellipse(hx - r * 0.38, hy - r * 0.86, r * 0.4, r * 0.15, -0.45, 0, TAU);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  drawBrows(ctx, hx, hy, mood) {
-    const angles = {
-      calm: [-13, -12.5],
-      focused: [-10, -14.5],
-      angry: [-7.5, -15.5],
-      scared: [-16.5, -11],
-      jump: [-16, -14],
+  // локоть и углы звеньев бросающей руки в координатах фигуры: локоть сидит на конце рукава,
+  // предплечье дотягивается от него к кисти. поднятая кисть уходит за голову,
+  // поэтому предплечье тогда рисуется за телом
+  armPose() {
+    const S = HERO.shoulder;
+    const ex = S.x + Math.cos(this.upperAng) * ARM.upperLen;
+    const ey = S.y + Math.sin(this.upperAng) * ARM.upperLen;
+    return {
+      ex,
+      ey,
+      upper: this.upperAng,
+      fore: Math.atan2(S.y + this.hand.y - ey, S.x + this.hand.x - ex),
+      behind: this.hand.y < -3,
     };
-    const pair = angles[mood];
-    if (!pair) {
-      return;
-    }
-    const lx = hx - 9;
-    const rx = hx + 9;
-    const ey = hy + 1;
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = LOOK.brow;
-    ctx.lineWidth = 3.4;
-    ctx.beginPath();
-    ctx.moveTo(lx - 6, ey + pair[1]);
-    ctx.lineTo(lx + 5, ey + pair[0]);
-    ctx.moveTo(rx - 5, ey + pair[0]);
-    ctx.lineTo(rx + 6, ey + pair[1]);
-    ctx.stroke();
-    ctx.restore();
   }
 
-  drawFace(ctx, hx, hy, r, mood) {
-    const lx = hx - 9;
-    const rx = hx + 9;
-    const ey = hy + 1;
-    const mouthY = hy + 12;
+  drawForearm(ctx, arm, mirror) {
+    drawPiece(ctx, HERO_ART.forearm, ARM.forePivot.x, ARM.forePivot.y, arm.ex, arm.ey, arm.fore - ARM.foreAxis, forearmClip);
+    // снаряд лежит в кулаке, пока рука не бросила; после броска кисть возвращается пустой и берёт следующий.
+    // в зеркале разворачиваем его обратно, чтобы не читался вывернутым
+    if (this.throwAnim < 0.25) {
+      ctx.save();
+      ctx.translate(arm.ex + Math.cos(arm.fore) * ARM.gripLen, arm.ey + Math.sin(arm.fore) * ARM.gripLen);
+      if (mirror) {
+        ctx.scale(-1, 1);
+      }
+      drawEmoji(ctx, this.weapon.emoji, 0, 0, this.weapon.size * 0.62,
+        mirror ? -(arm.fore + Math.PI / 2) : arm.fore + Math.PI / 2);
+      ctx.restore();
+    }
+  }
 
+  // ноги: левая шагает в фазе, правая в противофазе; колено сгибается у ноги, летящей вперёд по ходу,
+  // так что стопа приподнимается сзади. в прыжке ноги поджаты, на кожуре разъезжаются
+  drawLegs(ctx, travel) {
+    const s = Math.sin(this.bob);
+    const c = Math.cos(this.bob);
+    const slipK = this.slip > 0 ? 1 : 0;
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? 1 : -1;
+      let thigh = 0.42 * s * side * this.run;
+      const bend = 0.75 * Math.max(0, travel * c * side) * this.run;
+      let shin = thigh - Math.sign(travel) * bend;
+      thigh = lerp(thigh, i === 0 ? 0.3 : 0.1, this.air) - side * 0.22 * slipK;
+      shin = lerp(shin, i === 0 ? -0.4 : -0.45, this.air) - side * 0.22 * slipK;
+      this.drawLeg(ctx, HERO.hips[i], thigh, shin, i === 1);
+    }
+  }
+
+  // углы — отклонение от вертикали вниз в сторону взгляда. правую ногу зеркалим, чтобы пара была симметричной
+  drawLeg(ctx, hip, thigh, shin, flip) {
+    const kx = hip.x + Math.sin(thigh) * HERO.thighLen;
+    const ky = hip.y + Math.cos(thigh) * HERO.thighLen;
+    ctx.fillStyle = HERO.outline;
+    ctx.beginPath();
+    ctx.arc(kx, ky, HERO.kneeR, 0, TAU);
+    ctx.fill();
+    drawPiece(ctx, HERO_ART.leg, 35, KNEE_ROW, kx, ky, -shin, shinClip, flip);
+    drawPiece(ctx, HERO_ART.leg, 35, HERO.thighPivotRow, hip.x, hip.y, -thigh, thighClip, flip, HERO.thighStretch);
+  }
+
+  // мимика поверх нарисованного лица: глаза перерисовываются всегда — так герой моргает
+  // и косится в сторону прицела; рот и брови трогаем только когда выражение не спокойное
+  drawFace(ctx, mood) {
     ctx.save();
+    ctx.translate(HERO.body.x, HERO.body.y);
+    ctx.scale(SPR, SPR);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    const blink = (mood === 'calm' || mood === 'focused') && this.t % 3.9 < 0.11;
+    for (const eye of FACE.eyes) {
+      this.drawEye(ctx, eye, mood, blink);
+    }
+    if (mood === 'rage') {
+      // сведённые брови ложатся поверх оправы очков
+      ctx.strokeStyle = FACE.brow;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(50, 67);
+      ctx.lineTo(79, 88);
+      ctx.moveTo(126, 67);
+      ctx.lineTo(97, 88);
+      ctx.stroke();
+    }
+    if (mood !== 'calm') {
+      this.drawMouth(ctx, mood);
+    }
+    ctx.restore();
+  }
 
-    ctx.fillStyle = LOOK.blush;
+  drawEye(ctx, eye, mood, blink) {
+    ctx.save();
     ctx.beginPath();
-    ctx.ellipse(lx - 7, ey + 8, 5, 3.2, 0, 0, TAU);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(rx + 7, ey + 8, 5, 3.2, 0, 0, TAU);
-    ctx.fill();
-
-    // белок без обводки: с ней глаза читались как очки, а очки у героя настоящие
-    const eye = (x, w, h) => {
-      ctx.fillStyle = '#ffffff';
+    ctx.arc(eye.x, eye.y, FACE.lensR, 0, TAU);
+    ctx.clip();
+    if (blink) {
+      ctx.fillStyle = FACE.skin;
+      ctx.fillRect(eye.x - 14, eye.y - 14, 28, 28);
+      ctx.strokeStyle = FACE.dark;
+      ctx.lineWidth = 2.6;
       ctx.beginPath();
-      ctx.ellipse(x, ey, w, h, 0, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = LOOK.eye;
+      ctx.arc(eye.x, eye.y - 3.5, 7.5, TAU * 0.09, TAU * 0.41);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(eye.x - 14, eye.y - 14, 28, 28);
+    if (mood === 'happy') {
+      // довольные глаза-дуги
+      ctx.strokeStyle = FACE.dark;
+      ctx.lineWidth = 3.4;
       ctx.beginPath();
-      ctx.ellipse(x + 1, ey + h * 0.08, w * 0.66, h * 0.76, 0, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(x - w * 0.25, ey - h * 0.34, w * 0.3, 0, TAU);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(x + w * 0.4, ey + h * 0.34, w * 0.15, 0, TAU);
-      ctx.fill();
-    };
-
-    const arcEye = (x) => {
-      ctx.strokeStyle = LOOK.eye;
+      ctx.arc(eye.x, eye.y + 2.5, 7, Math.PI * 1.12, Math.PI * 1.88);
+      ctx.stroke();
+    } else if (mood === 'hurt') {
+      ctx.strokeStyle = FACE.dark;
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(x, ey + 3, 6, Math.PI * 1.12, Math.PI * 1.88);
+      ctx.moveTo(eye.x - 5, eye.y - 5);
+      ctx.lineTo(eye.x + 5, eye.y + 5);
+      ctx.moveTo(eye.x + 5, eye.y - 5);
+      ctx.lineTo(eye.x - 5, eye.y + 5);
       ctx.stroke();
-    };
-
-    const crossEye = (x) => {
-      ctx.strokeStyle = LOOK.eye;
-      ctx.lineWidth = 3;
+    } else if (mood === 'dizzy') {
+      ctx.strokeStyle = FACE.dark;
+      ctx.lineWidth = 2.2;
       ctx.beginPath();
-      ctx.moveTo(x - 4.5, ey - 4.5);
-      ctx.lineTo(x + 4.5, ey + 4.5);
-      ctx.moveTo(x + 4.5, ey - 4.5);
-      ctx.lineTo(x - 4.5, ey + 4.5);
-      ctx.stroke();
-    };
-
-    const spiralEye = (x) => {
-      ctx.strokeStyle = LOOK.eye;
-      ctx.lineWidth = 2.4;
-      ctx.beginPath();
-      for (let a = 0; a < TAU * 1.7; a += 0.28) {
-        const rr = 1 + a * 1.15;
-        const px = x + Math.cos(a + this.slip * 4) * rr;
-        const py = ey + Math.sin(a + this.slip * 4) * rr;
+      for (let a = 0; a < TAU * 1.6; a += 0.3) {
+        const rr = 1.5 + a * 1.35;
+        const sx = eye.x + Math.cos(a + this.t * 6) * rr;
+        const sy = eye.y + Math.sin(a + this.t * 6) * rr;
         if (a === 0) {
-          ctx.moveTo(px, py);
+          ctx.moveTo(sx, sy);
         } else {
-          ctx.lineTo(px, py);
+          ctx.lineTo(sx, sy);
         }
       }
       ctx.stroke();
-    };
-
-    const smile = (w, depth) => {
-      ctx.strokeStyle = LOOK.mouth;
-      ctx.lineWidth = 3.2;
+    } else {
+      // обычный зрачок с бликами, слегка следит за прицелом
+      const aim = this.facingAim;
+      let r = FACE.pupilR;
+      let ox = FACE.pupilOff.x + Math.cos(aim) * 1.5;
+      let oy = FACE.pupilOff.y + Math.sin(aim) * 1.5;
+      if (mood === 'scared') {
+        r = 5.5;
+        ox *= 0.4;
+        oy *= 0.4;
+      } else if (mood === 'jump') {
+        r = 7.6;
+      }
+      ctx.fillStyle = FACE.dark;
       ctx.beginPath();
-      ctx.moveTo(hx - w, mouthY - depth * 0.3);
-      ctx.quadraticCurveTo(hx, mouthY + depth, hx + w, mouthY - depth * 0.3);
-      ctx.stroke();
-    };
-
-    const openMouth = (w, h) => {
-      inked(ctx, () => {
-        ctx.ellipse(hx, mouthY + 1, w, h, 0, 0, TAU);
-      }, '#8a2f2a', 2.5);
-      ctx.fillStyle = LOOK.tongue;
-      ctx.beginPath();
-      ctx.ellipse(hx, mouthY + h * 0.55, w * 0.55, h * 0.35, 0, 0, TAU);
+      ctx.arc(eye.x + ox, eye.y + oy, r, 0, TAU);
       ctx.fill();
-    };
-
-    const flatMouth = (w) => {
-      ctx.strokeStyle = LOOK.mouth;
-      ctx.lineWidth = 3.2;
+      ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.moveTo(hx - w, mouthY);
-      ctx.lineTo(hx + w, mouthY);
+      ctx.arc(eye.x + ox - r * 0.3, eye.y + oy - r * 0.34, r * 0.32, 0, TAU);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(eye.x + ox + r * 0.38, eye.y + oy + r * 0.38, r * 0.16, 0, TAU);
+      ctx.fill();
+      if (mood === 'focused') {
+        // прищур: верхнее веко прикрывает глаз
+        ctx.fillStyle = FACE.skin;
+        ctx.fillRect(eye.x - 14, eye.y - 14, 28, 10.5);
+        ctx.strokeStyle = FACE.dark;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(eye.x - 10, eye.y - 3.5);
+        ctx.lineTo(eye.x + 10, eye.y - 3.5);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  drawMouth(ctx, mood) {
+    // родная улыбка закрашивается кожей, сверху рисуется рот по настроению
+    ctx.fillStyle = FACE.skin;
+    roundRect(ctx, 62, 113, 51, 22, 8);
+    ctx.fill();
+    const mx = FACE.mouth.x;
+    const my = FACE.mouth.y;
+    ctx.strokeStyle = FACE.dark;
+    if (mood === 'happy') {
+      ctx.beginPath();
+      ctx.moveTo(mx - 16, my - 5);
+      ctx.quadraticCurveTo(mx, my - 2, mx + 16, my - 5);
+      ctx.quadraticCurveTo(mx + 13, my + 11, mx, my + 11);
+      ctx.quadraticCurveTo(mx - 13, my + 11, mx - 16, my - 5);
+      ctx.closePath();
+      ctx.fillStyle = FACE.mouthFill;
+      ctx.fill();
+      ctx.lineWidth = 2;
       ctx.stroke();
-    };
-
-    const grit = (w) => {
-      ctx.strokeStyle = LOOK.mouth;
+      ctx.fillStyle = FACE.tongue;
+      ctx.beginPath();
+      ctx.ellipse(mx, my + 7, 8, 3.6, 0, 0, TAU);
+      ctx.fill();
+    } else if (mood === 'jump' || mood === 'scared' || mood === 'hurt') {
+      const rx = mood === 'hurt' ? 8 : 5.5;
+      const ry = mood === 'hurt' ? 6 : 7;
+      ctx.fillStyle = FACE.mouthFill;
+      ctx.beginPath();
+      ctx.ellipse(mx, my + 1, rx, ry, 0, 0, TAU);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else if (mood === 'focused') {
+      ctx.strokeStyle = FACE.mouthLine;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(mx - 11, my);
+      ctx.lineTo(mx + 11, my);
+      ctx.stroke();
+    } else if (mood === 'dizzy') {
+      ctx.strokeStyle = FACE.mouthLine;
       ctx.lineWidth = 3.2;
       ctx.beginPath();
-      ctx.moveTo(hx - w, mouthY);
-      for (let i = 1; i <= 4; i++) {
-        ctx.lineTo(hx - w + (i * w) / 2, mouthY + (i % 2 === 0 ? 0 : 3.2));
+      ctx.moveTo(mx - 12, my);
+      ctx.quadraticCurveTo(mx - 6, my + 5, mx, my);
+      ctx.quadraticCurveTo(mx + 6, my - 5, mx + 12, my);
+      ctx.stroke();
+    } else if (mood === 'rage') {
+      // стиснутые зубы
+      ctx.fillStyle = '#5b2018';
+      roundRect(ctx, mx - 18, my - 8, 36, 15, 5);
+      ctx.fill();
+      ctx.lineWidth = 2.2;
+      roundRect(ctx, mx - 18, my - 8, 36, 15, 5);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      roundRect(ctx, mx - 16, my - 6, 32, 6.5, 2.5);
+      ctx.fill();
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      for (const tx of [mx - 8, mx, mx + 8]) {
+        ctx.moveTo(tx, my - 6);
+        ctx.lineTo(tx, my + 0.5);
       }
       ctx.stroke();
-    };
-
-    switch (mood) {
-      case 'angry':
-        eye(lx, 6.4, 4.8);
-        eye(rx, 6.4, 4.8);
-        grit(7.5);
-        ctx.strokeStyle = '#ff4d6d';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(hx + 14, hy - 16);
-        ctx.lineTo(hx + 20, hy - 10);
-        ctx.moveTo(hx + 20, hy - 16);
-        ctx.lineTo(hx + 14, hy - 10);
-        ctx.stroke();
-        break;
-      case 'scared':
-        eye(lx, 7, 7.4);
-        eye(rx, 7, 7.4);
-        openMouth(4.2, 4.8);
-        inked(ctx, () => {
-          ctx.moveTo(hx - 16, hy - 15);
-          ctx.quadraticCurveTo(hx - 20, hy - 8, hx - 16, hy - 5);
-          ctx.quadraticCurveTo(hx - 12, hy - 8, hx - 16, hy - 15);
-        }, '#9fe0ff', 2);
-        break;
-      case 'hurt':
-        crossEye(lx);
-        crossEye(rx);
-        openMouth(6, 5.2);
-        break;
-      case 'happy':
-        arcEye(lx);
-        arcEye(rx);
-        smile(8, 5.5);
-        break;
-      case 'dizzy':
-        spiralEye(lx);
-        spiralEye(rx);
-        ctx.strokeStyle = LOOK.mouth;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(hx - 6, mouthY);
-        ctx.quadraticCurveTo(hx - 2, mouthY + 3.5, hx, mouthY);
-        ctx.quadraticCurveTo(hx + 3, mouthY - 3.5, hx + 6, mouthY);
-        ctx.stroke();
-        break;
-      case 'focused':
-        eye(lx, 6.4, 4.2);
-        eye(rx, 6.4, 4.2);
-        flatMouth(5.5);
-        break;
-      case 'jump':
-        eye(lx, 6.6, 6.8);
-        eye(rx, 6.6, 6.8);
-        openMouth(4, 4.4);
-        break;
-      default:
-        eye(lx, 6.6, 6.4);
-        eye(rx, 6.6, 6.4);
-        smile(6.5, 4.2);
-        break;
     }
+  }
 
-    // круглые очки поверх глаз — как на референсе
-    ctx.strokeStyle = LOOK.line;
-    ctx.lineWidth = 2.8;
+  // огненная аура ярости: зарево и языки пламени, ползущие вверх по фигуре.
+  // считается от t детерминированно, поэтому у хоста и гостя выглядит одинаково без синхронизации
+  drawRageAura(ctx) {
+    const pulse = 1 + Math.sin(this.t * 9) * 0.08;
+    const glow = ctx.createRadialGradient(0, -74, 12, 0, -74, 78 * pulse);
+    glow.addColorStop(0, 'rgba(255,140,40,.4)');
+    glow.addColorStop(0.6, 'rgba(255,80,20,.18)');
+    glow.addColorStop(1, 'rgba(255,60,10,0)');
+    ctx.save();
+    ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(lx, ey, 9.6, 0, TAU);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(rx, ey, 9.6, 0, TAU);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(lx + 9.6, ey);
-    ctx.lineTo(rx - 9.6, ey);
-    ctx.moveTo(lx - 9.6, ey - 1);
-    ctx.lineTo(hx - r + 1, ey - 4);
-    ctx.moveTo(rx + 9.6, ey - 1);
-    ctx.lineTo(hx + r - 1, ey - 4);
-    ctx.stroke();
-
+    ctx.arc(0, -74, 78 * pulse, 0, TAU);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 7; i++) {
+      const ph = (this.t * 0.85 + i * 0.143) % 1;
+      const x = Math.sin(i * 2.6) * (26 - ph * 14) + Math.sin(this.t * 6 + i * 1.9) * 5;
+      const y = lerp(-8, -158, ph);
+      const size = (1 - ph) * 6.5 + 2;
+      ctx.globalAlpha = (1 - ph) * 0.5;
+      ctx.fillStyle = '#ff7b2d';
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath();
+      ctx.arc(x, y - size * 0.8, size * 0.55, 0, TAU);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -1047,11 +1131,7 @@ class Player {
       return;
     }
 
-    const mood = this.faceMood();
-    const blink = this.invuln > 0 && Math.floor(this.invuln * 14) % 2 === 0;
-    ctx.save();
-    ctx.globalAlpha = blink ? 0.35 : 1;
-    const hop = this.onGround ? Math.abs(Math.sin(this.bob)) * 4 : 0;
+    const hop = Math.abs(Math.sin(this.bob)) * 4 * this.run;
     const baseY = this.y - hop;
     // при поскальзывании персонаж заваливается набок
     const tilt = this.slip > 0 ? Math.sin(this.slip * 18) * 0.35 : 0;
@@ -1062,174 +1142,68 @@ class Player {
     ctx.ellipse(this.x, CONFIG.groundY + 6, this.onGround ? 28 : 19, 8, 0, 0, TAU);
     ctx.fill();
 
+    if (!HERO_ART.ready) {
+      return;
+    }
+
+    const blink = this.invuln > 0 && Math.floor(this.invuln * 14) % 2 === 0;
+    ctx.save();
+    ctx.globalAlpha = blink ? 0.35 : 1;
+
     // тело всегда рисуем «лицом вправо», а для броска влево зеркалим холст целиком —
     // тогда поза одинаково аккуратна в обе стороны
-    const mirror = Math.cos(this.aim) < 0;
-    const aim = mirror ? Math.PI - this.aim : this.aim;
-    const windK = this.charging ? 0.25 + this.charge * 0.6 : 0;
-    const lean = this.throwAnim * 0.16 - windK * 0.16;
-
+    const mirror = this.facing < 0;
     if (mirror) {
       ctx.translate(this.x, 0);
       ctx.scale(-1, 1);
       ctx.translate(-this.x, 0);
     }
     ctx.translate(this.x, baseY);
-    ctx.rotate(tilt + lean);
-    ctx.translate(-this.x, -baseY);
+    ctx.rotate(tilt + this.lean);
+    // дыхание в покое и пружина прыжка: фигура тянется и сплющивается от подошв
+    const breath = Math.sin(this.t * 2.4) * 0.012 * (1 - this.run);
+    ctx.scale(1 - 0.07 * this.stretch, 1 + 0.09 * this.stretch + breath);
 
-    const step = this.onGround ? Math.sin(this.bob) * 5 : -3;
-    const legL = this.x - 15 - step * 0.5;
-    const legR = this.x + 2 + step * 0.5;
+    const travel = Math.sign(this.move) * this.facing;
+    const arm = this.armPose();
+    const body = HERO_ART.bodies[this.index % HERO_ART.bodies.length];
+    const sleeve = HERO_ART.arms[this.index % HERO_ART.arms.length];
 
-    // ноги, носки и кроссовки
-    for (const lx of [legL, legR]) {
-      inked(ctx, () => {
-        roundRect(ctx, lx, baseY - 42, 13, 26, 6);
-      }, LOOK.skin, 3);
-      inked(ctx, () => {
-        roundRect(ctx, lx - 0.5, baseY - 22, 14, 12, 4);
-      }, '#ffffff', 3);
-      inked(ctx, () => {
-        roundRect(ctx, lx - 2, baseY - 13, 19, 13, 5);
-      }, LOOK.shoe, 3);
-      ctx.fillStyle = LOOK.shoeDark;
-      roundRect(ctx, lx, baseY - 6, 15, 4, 2);
-      ctx.fill();
+    if (this.raging) {
+      this.drawRageAura(ctx);
     }
-
-    // шорты
-    inked(ctx, () => {
-      roundRect(ctx, this.x - 19, baseY - 60, 38, 26, 9);
-    }, LOOK.pants, 3);
-    ctx.fillStyle = LOOK.pantsDark;
-    roundRect(ctx, this.x - 1.5, baseY - 58, 3, 22, 1.5);
+    this.drawLegs(ctx, travel);
+    if (arm.behind) {
+      this.drawForearm(ctx, arm, mirror);
+    }
+    ctx.drawImage(body, HERO.body.x, HERO.body.y, HERO.body.w, HERO.body.h);
+    this.drawFace(ctx, this.faceMood());
+    // дальняя рука: рукав нарисован на теле, из-под его подола висит предплечье
+    drawPiece(ctx, HERO_ART.forearm, ARM.farPivot.x, ARM.farPivot.y,
+      HERO.farElbow.x, HERO.farElbow.y, this.farAng - ARM.farAxis, farForearmClip);
+    if (!arm.behind) {
+      this.drawForearm(ctx, arm, mirror);
+    }
+    // заплатка на плече: когда рукав повёрнут замахом, она закрывает открывшуюся подмышку.
+    // в покое целиком спрятана под рукавом
+    ctx.fillStyle = SLEEVE_COLORS[this.index % SLEEVE_COLORS.length];
+    ctx.beginPath();
+    ctx.arc(HERO.shoulder.x, HERO.shoulder.y + 1, 12 * SPR, 0, TAU);
     ctx.fill();
-
-    // рюкзак за спиной
-    inked(ctx, () => {
-      roundRect(ctx, this.x - 30, baseY - 84, 18, 40, 8);
-    }, LOOK.bag, 3);
-
-    // футболка
-    inked(ctx, () => {
-      roundRect(ctx, this.x - 20, baseY - 88, 40, 34, 12);
-    }, this.color, 3);
-    // белый воротник
-    inked(ctx, () => {
-      ctx.moveTo(this.x - 8, baseY - 88);
-      ctx.quadraticCurveTo(this.x, baseY - 78, this.x + 8, baseY - 88);
-      ctx.closePath();
-    }, '#ffffff', 2.5);
-
-    // лямки рюкзака поверх футболки
-    for (const sx2 of [this.x - 15, this.x + 7]) {
-      inked(ctx, () => {
-        roundRect(ctx, sx2, baseY - 88, 8, 30, 4);
-      }, LOOK.bagStrap, 2.5);
-    }
-
-    // дальняя рука висит вдоль корпуса снаружи футболки, иначе её не видно
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = LOOK.line;
-    ctx.lineWidth = 17;
-    ctx.beginPath();
-    ctx.moveTo(this.x - 19, baseY - 82);
-    ctx.quadraticCurveTo(this.x - 28, baseY - 72, this.x - 27, baseY - 52);
-    ctx.stroke();
-    ctx.strokeStyle = LOOK.skin;
-    ctx.lineWidth = 11;
-    ctx.beginPath();
-    ctx.moveTo(this.x - 19, baseY - 82);
-    ctx.quadraticCurveTo(this.x - 28, baseY - 72, this.x - 27, baseY - 52);
-    ctx.stroke();
-    inked(ctx, () => {
-      ctx.arc(this.x - 27, baseY - 48, 6.5, 0, TAU);
-    }, LOOK.skin, 3);
-    // короткий рукав на дальнем плече
-    inked(ctx, () => {
-      roundRect(ctx, this.x - 26, baseY - 88, 14, 17, 7);
-    }, this.color, 3);
-
-    this.drawHead(ctx, this.x, baseY - 108, 21, mood);
-
-    // ближняя рука: замах уводит её назад к бедру, бросок проносит вперёд по дуге
-    const backAngle = Math.PI * 0.82;
-    let toBack = backAngle - aim;
-    while (toBack > Math.PI) {
-      toBack -= TAU;
-    }
-    while (toBack < -Math.PI) {
-      toBack += TAU;
-    }
-    const armAngle = aim + toBack * windK + this.throwAnim * 0.55;
-    const armLen = 40 - 4 * (this.charging ? this.charge : 0);
-    const sx = this.x + 12;
-    const sy = baseY - 80;
-    const hx = sx + Math.cos(armAngle) * armLen;
-    const hy = sy + Math.sin(armAngle) * armLen;
-    // локоть уходит наружу от корпуса: рука не выглядит палкой и не режет лицо
-    const bend = armAngle + Math.PI / 2;
-    const ex = (sx + hx) / 2 + Math.cos(bend) * 8;
-    const ey2 = (sy + hy) / 2 + Math.sin(bend) * 8;
+    drawPiece(ctx, sleeve, ARM.sleevePivot.x, ARM.sleevePivot.y,
+      HERO.shoulder.x, HERO.shoulder.y, arm.upper - ARM.sleeveAxis, sleeveClip);
 
     // короткий след за кистью — читается как мах, а не как круг вокруг героя
-    if (this.throwAnim > 0) {
+    if (this.throwAnim > 0.45) {
+      const handAngle = Math.atan2(this.hand.y, this.hand.x);
       ctx.save();
       ctx.globalAlpha = this.throwAnim * 0.4;
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 3;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.arc(sx, sy, armLen * 0.95, armAngle - 0.85, armAngle - 0.08);
+      ctx.arc(HERO.shoulder.x, HERO.shoulder.y, Math.hypot(this.hand.x, this.hand.y) * 0.95, handAngle - 0.9, handAngle - 0.1);
       ctx.stroke();
-      ctx.restore();
-    }
-
-    // плечо и предплечье — два отрезка; контур и заливка идут по одной и той же кривой,
-    // иначе тёмная обводка съезжает и рука выглядит чёрной трубой
-    const segments = [
-      { from: [sx, sy], ctrl: [lerp(sx, ex, 0.75), lerp(sy, ey2, 0.75)], to: [ex, ey2], w: 11, color: LOOK.skin },
-      { from: [ex, ey2], ctrl: [lerp(ex, hx, 0.55), lerp(ey2, hy, 0.55)], to: [hx, hy], w: 10, color: LOOK.skin },
-    ];
-    const strokeArm = (seg, width, color) => {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = width;
-      ctx.beginPath();
-      ctx.moveTo(seg.from[0], seg.from[1]);
-      ctx.quadraticCurveTo(seg.ctrl[0], seg.ctrl[1], seg.to[0], seg.to[1]);
-      ctx.stroke();
-    };
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    for (const seg of segments) {
-      strokeArm(seg, seg.w + 6, LOOK.line);
-    }
-    for (const seg of segments) {
-      strokeArm(seg, seg.w, seg.color);
-    }
-    // короткий рукав на бросающем плече
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(armAngle);
-    inked(ctx, () => {
-      roundRect(ctx, -7, -9, 17, 18, 7);
-    }, this.color, 3);
-    ctx.restore();
-
-    inked(ctx, () => {
-      ctx.arc(hx, hy, 6.5, 0, TAU);
-    }, LOOK.skin, 3);
-
-    // снаряд в кисти разворачиваем обратно, чтобы в зеркале он не читался вывернутым
-    if (this.cooldown <= 0) {
-      ctx.save();
-      ctx.translate(hx + Math.cos(armAngle) * 5, hy + Math.sin(armAngle) * 5);
-      if (mirror) {
-        ctx.scale(-1, 1);
-      }
-      drawEmoji(ctx, this.weapon.emoji, 0, 0, this.weapon.size * 0.6,
-        mirror ? -(armAngle + Math.PI / 2) : armAngle + Math.PI / 2);
       ctx.restore();
     }
     ctx.restore();
@@ -1240,13 +1214,13 @@ class Player {
       ctx.strokeStyle = '#4ecdc4';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(this.x, baseY - 68, 62, 0, TAU);
+      ctx.arc(this.x, baseY - 72, 58, 0, TAU);
       ctx.stroke();
       ctx.restore();
     }
 
     if (this.slip > 0) {
-      drawEmoji(ctx, '💫', this.x, baseY - 142, 26, Math.sin(this.slip * 10) * 0.4);
+      drawEmoji(ctx, '💫', this.x, baseY - 156, 26, Math.sin(this.slip * 10) * 0.4);
     }
 
     if (showName) {
@@ -1254,14 +1228,14 @@ class Player {
       ctx.font = '700 13px "Segoe UI", system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = this.color;
-      ctx.fillText(this.name, this.x, baseY - 140);
+      ctx.fillText(this.name, this.x, baseY - 154);
       ctx.restore();
     }
 
-    if (this.charging && !this.weapon.autoFire) {
+    if (this.charging && !this.weapon.autoFire && !this.raging) {
       const w = 60;
       const x = this.x - w / 2;
-      const y = baseY - 158;
+      const y = baseY - 172;
       ctx.fillStyle = 'rgba(0,0,0,.45)';
       roundRect(ctx, x - 2, y - 2, w + 4, 12, 6);
       ctx.fill();

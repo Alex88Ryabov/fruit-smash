@@ -20,6 +20,10 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
+function polar(angle, r) {
+  return { x: Math.cos(angle) * r, y: Math.sin(angle) * r };
+}
+
 // сглаживание, не зависящее от длины кадра
 function damp(a, b, rate, dt) {
   return lerp(a, b, 1 - Math.exp(-rate * dt));
@@ -50,6 +54,8 @@ function drawEmoji(ctx, emoji, x, y, size, rotation = 0, alpha = 1) {
   ctx.globalAlpha = alpha;
   ctx.translate(x, y);
   ctx.rotate(rotation);
+  // цветной глиф берёт альфу из fillStyle: если до этого рисовали полупрозрачным, эмодзи выцветает
+  ctx.fillStyle = '#000000';
   ctx.font = size + 'px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
