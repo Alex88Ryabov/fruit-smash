@@ -23,7 +23,9 @@ const CG = {
   // спасает от зависшего скрипта или init в чужом iframe: игра стартует без SDK,
   // опоздавшая инициализация игнорируется
   boot(onReady) {
-    if (!this.onPortal) {
+    // с диска площадка игру не отдаёт: локальное превью в iframe (preview-crazygames.html)
+    // получает раскладку площадки, но SDK не ждёт
+    if (!this.onPortal || location.protocol === 'file:') {
       onReady();
       return;
     }
@@ -87,6 +89,21 @@ const CG = {
     } catch (err) {
       return Promise.resolve('');
     }
+  },
+
+  // язык: площадка знает локаль игрока через SDK, вне её остаётся язык браузера
+  locale() {
+    if (this.active) {
+      try {
+        const locale = this.sdk.user.systemInfo.locale;
+        if (locale) {
+          return locale;
+        }
+      } catch (err) {
+        // без системной информации площадки берём язык браузера
+      }
+    }
+    return navigator.language || 'en';
   },
 
   memoryStore: null,

@@ -8,6 +8,8 @@ const STRINGS = {
     'ui.tagline': 'Сбивай летающие фрукты, пока они не забросали тебя',
     'ui.hintTouch': 'Тяни пальцем назад и отпусти — бросок',
     'ui.hintMouse': 'Целься мышью, зажми ЛКМ — сила, отпусти — бросок',
+    'hint.throwTouch': 'Потяни назад и отпусти — бросок',
+    'hint.throwMouse': 'Целься в фрукт, зажми кнопку и отпусти',
     'ui.campaign': '🌳 Кампания',
     'ui.campaignSub': 'сады, уровни и звёзды · ★ {n} из {max}',
     'ui.endless': '♾️ Бесконечный режим',
@@ -208,6 +210,8 @@ const STRINGS = {
     'ui.tagline': 'Збивай літаючі фрукти, поки вони не закидали тебе',
     'ui.hintTouch': 'Тягни пальцем назад і відпусти — кидок',
     'ui.hintMouse': 'Цілься мишею, затисни ЛКМ — сила, відпусти — кидок',
+    'hint.throwTouch': 'Потягни назад і відпусти — кидок',
+    'hint.throwMouse': 'Цілься у фрукт, затисни кнопку і відпусти',
     'ui.campaign': '🌳 Кампанія',
     'ui.campaignSub': 'сади, рівні та зірки · ★ {n} з {max}',
     'ui.endless': '♾️ Нескінченний режим',
@@ -408,6 +412,8 @@ const STRINGS = {
     'ui.tagline': 'Knock down the flying fruit before it pelts you',
     'ui.hintTouch': 'Drag back and release to throw',
     'ui.hintMouse': 'Aim with the mouse, hold LMB to charge, release to throw',
+    'hint.throwTouch': 'Pull back and release to throw',
+    'hint.throwMouse': 'Aim at a fruit, hold the button, release',
     'ui.campaign': '🌳 Campaign',
     'ui.campaignSub': 'gardens, levels and stars · ★ {n} of {max}',
     'ui.endless': '♾️ Endless mode',
@@ -610,7 +616,7 @@ function detectLang() {
   if (saved && STRINGS[saved]) {
     return saved;
   }
-  const nav = (navigator.language || 'en').slice(0, 2).toLowerCase();
+  const nav = CG.locale().slice(0, 2).toLowerCase();
   if (nav === 'uk') {
     return 'uk';
   }

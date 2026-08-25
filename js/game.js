@@ -98,6 +98,7 @@ class Game {
     this.touch = { active: false, mode: null, id: null, ox: 0, oy: 0, x: 0, y: 0 };
     this.touchRelease = null;
     this.touchUsed = false;
+    this.throwHint = false;
     this.jumpQueued = false;
     this.clouds = Array.from({ length: 7 }, () => ({
       x: rand(0, CONFIG.width),
@@ -113,6 +114,7 @@ class Game {
     this.cgLoaded = false;
     this.netStatus = 'offline';
     this.netMessage = '';
+    this.invite = '';
     this.remoteInputs = [];
     this.events = [];
     this.newTexts = [];
@@ -135,6 +137,12 @@ class Game {
     this.bindLobby();
     this.resize();
     window.addEventListener('resize', () => this.resize());
+
+    // новичок попадает сразу в первый уровень, меню — через паузу.
+    // вход по приглашению и мгновенный мультиплеер уже заняли роль — им не мешаем
+    if (this.save.fresh && this.net.role === 'solo') {
+      this.startLevel(0, 0);
+    }
 
     this.last = performance.now();
     requestAnimationFrame((t) => this.loop(t));
@@ -271,6 +279,7 @@ class Game {
   }
 
   onNetInvite(invite) {
+    this.invite = invite;
     this.inviteValue.value = invite;
     this.inviteBox.classList.remove('hidden');
     this.inviteValue.select();
@@ -333,7 +342,7 @@ class Game {
     this.inviteValue.select();
     const done = () => this.onNetStatus('waiting', t('net.copied'));
     if (navigator.clipboard && location.protocol !== 'file:') {
-      navigator.clipboard.writeText(this.inviteValue.value).then(done, () => {});
+      navigator.clipboard.writeText(this.invite).then(done, () => {});
       return;
     }
     // из file:// буфер обмена недоступен, остаётся выделить текст
@@ -341,7 +350,7 @@ class Game {
   }
 
   shareInvite() {
-    navigator.share({ text: t('net.shareText'), url: this.inviteValue.value })
+    navigator.share({ text: t('net.shareText'), url: this.invite })
       .then(() => this.onNetStatus('waiting', t('net.shared')), () => {});
   }
 
@@ -471,7 +480,8 @@ class Game {
         this.sound.unlock();
         this.jumpQueued = true;
       }
-      if (e.code === 'KeyP' || e.code === 'Escape') {
+      // Esc не трогаем: на площадке он выводит из полноэкранного режима
+      if (e.code === 'KeyP') {
         this.togglePause();
       }
       if (e.code === 'KeyM') {
@@ -552,6 +562,8 @@ class Game {
     for (const player of this.players) {
       this.applyPerks(player);
     }
+    // новичку показываем, как бросать, пока он не бросит сам
+    this.throwHint = this.save.fresh;
     // во время партии лобби только мешает, особенно на телефоне
     this.lobby.classList.add('hidden');
   }
@@ -816,6 +828,9 @@ class Game {
     player.cooldown = weapon.cooldown * (1 - (player.level - 1) * 0.15) * this.perks.reloadMul;
     player.throwPose();
     this.fx('throw', player.x, player.y - 60);
+    if (player === this.localPlayer) {
+      this.throwHint = false;
+    }
 
     if (weapon.ammo > 0) {
       player.ammo -= 1;
@@ -1960,6 +1975,60 @@ class Game {
     ctx.restore();
   }
 
+  // подсказка первого броска: на тач-экране от кисти героя раз за разом уходит назад «палец»
+  // с резинкой, на десктопе к ближайшему фрукту бежит пунктир; над головой — одна строка
+  drawThrowHint(ctx) {
+    if (!this.throwHint || this.role === 'guest' || !this.isField() || this.mode === MODE.paused
+      || this.touch.active || this.pressed) {
+      return;
+    }
+    const player = this.localPlayer;
+    const origin = player.aimOrigin;
+    const touch = CONFIG.layout === 'portrait' || this.touchUsed;
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,209,102,.75)';
+    ctx.setLineDash([8, 8]);
+    if (touch) {
+      // цикл 1.6 с: палец оттягивается назад-вниз, замирает и растворяется
+      const k = (this.time % 1.6) / 1.6;
+      const reach = 30 + 110 * easeOutCubic(Math.min(1, k / 0.6));
+      const tip = { x: origin.x - reach * 0.94, y: origin.y + reach * 0.34 };
+      ctx.globalAlpha = k > 0.8 ? (1 - k) / 0.2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(origin.x, origin.y);
+      ctx.lineTo(tip.x, tip.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, 12, 0, TAU);
+      ctx.fill();
+    } else {
+      const target = this.nearestEnemy(origin.x, origin.y);
+      const a = target ? Math.atan2(target.y - origin.y, target.x - origin.x) : -Math.PI / 4;
+      ctx.lineDashOffset = -this.time * 60;
+      ctx.beginPath();
+      ctx.moveTo(origin.x + Math.cos(a) * 40, origin.y + Math.sin(a) * 40);
+      ctx.lineTo(origin.x + Math.cos(a) * 160, origin.y + Math.sin(a) * 160);
+      ctx.stroke();
+    }
+
+    const label = t(touch ? 'hint.throwTouch' : 'hint.throwMouse');
+    const size = CONFIG.layout === 'portrait' ? 18 : 20;
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.font = '700 ' + size + 'px "Segoe UI", system-ui, sans-serif';
+    const width = ctx.measureText(label).width + 28;
+    const cx = clamp(origin.x, width / 2 + 10, CONFIG.width - width / 2 - 10);
+    const cy = player.y - 190;
+    ctx.fillStyle = 'rgba(10,8,23,.6)';
+    roundRect(ctx, cx - width / 2, cy - 19, width, 38, 12);
+    ctx.fill();
+    ctx.restore();
+    this.text(ctx, label, cx, cy, { size, color: '#ffd166' });
+  }
+
   // резинка рогатки: линия от игрока к пальцу и метка точки касания
   drawPull(ctx) {
     if (!this.touch.active || this.touch.mode !== 'aim') {
@@ -2288,7 +2357,6 @@ class Game {
     if (stage) {
       this.drawCoopScreen(ctx, stage);
       this.drawLangSwitch(ctx, w / 2, h * 0.94);
-      this.text(ctx, 'v' + GAME_VERSION, w - 14, h - 14, { size: 12, weight: 600, align: 'right', color: 'rgba(255,243,214,.45)' });
       return;
     }
 
@@ -2321,9 +2389,17 @@ class Game {
       sub: RANKS[this.save.rankIndex()].emoji + ' ' + t('rank.' + RANKS[this.save.rankIndex()].key),
       action: () => { this.mode = MODE.records; },
     });
-    this.text(ctx, t('ui.coopHint'), w / 2, h * 0.87, { size: 15, weight: 600, color: '#8ef6c5' });
+    // на площадке HTML-лобби скрыто, приглашение создаётся кнопкой на поле
+    if (CG.onPortal) {
+      this.uiButton(ctx, { x: bx, y: h * 0.42 + (bh + 16) * 3, w: bw, h: 48 }, {
+        label: '🤝 ' + t('dom.invite'),
+        size: 17,
+        action: () => this.net.invite(),
+      });
+    } else {
+      this.text(ctx, t('ui.coopHint'), w / 2, h * 0.87, { size: 15, weight: 600, color: '#8ef6c5' });
+    }
     this.drawLangSwitch(ctx, w / 2, h * 0.94);
-    this.text(ctx, 'v' + GAME_VERSION, w - 14, h - 14, { size: 12, weight: 600, align: 'right', color: 'rgba(255,243,214,.45)' });
   }
 
   // звание и прогресс до следующего: очки капают за уровни и забеги
@@ -2375,8 +2451,10 @@ class Game {
     });
     this.text(ctx, this.netMessage, w / 2, h * 0.49, { size: portrait ? 16 : 19, weight: 600 });
     if (stage === 'wait') {
-      this.text(ctx, t(navigator.share ? 'ui.coopWaitHint' : 'ui.coopWaitHintCopy'), w / 2, h * 0.545,
-        { size: portrait ? 15 : 18, weight: 600, color: 'rgba(255,243,214,.75)' });
+      if (!CG.onPortal) {
+        this.text(ctx, t(navigator.share ? 'ui.coopWaitHint' : 'ui.coopWaitHintCopy'), w / 2, h * 0.545,
+          { size: portrait ? 15 : 18, weight: 600, color: 'rgba(255,243,214,.75)' });
+      }
       this.text(ctx, t('ui.coopKeepOpen'), w / 2, h * 0.585,
         { size: portrait ? 13 : 15, weight: 600, color: 'rgba(255,243,214,.5)' });
     }
@@ -2390,9 +2468,25 @@ class Game {
     const bx = w / 2 - bw / 2;
     let y = h * 0.66;
     if (stage === 'wait') {
-      this.uiButton(ctx, { x: bx, y, w: bw, h: bh }, { label: t('ui.coopSolo'), action: () => this.startGame() });
-      y += bh + 16;
-      this.uiButton(ctx, { x: bx, y, w: bw, h: bh }, { label: t('dom.cancel'), action: () => this.leaveCoop(t('net.cancelled')) });
+      const solo = { label: t('ui.coopSolo'), action: () => this.startGame() };
+      const cancel = { label: t('dom.cancel'), action: () => this.leaveCoop(t('net.cancelled')) };
+      if (CG.onPortal) {
+        // на площадке HTML-лобби скрыто: ссылка отправляется и копируется кнопками на поле
+        const half = (bw - 12) / 2;
+        if (navigator.share) {
+          this.uiButton(ctx, { x: bx, y, w: half, h: bh }, { label: t('dom.share'), tone: 'primary', action: () => this.shareInvite() });
+          this.uiButton(ctx, { x: bx + half + 12, y, w: half, h: bh }, { label: t('dom.copy'), action: () => this.copyInvite() });
+        } else {
+          this.uiButton(ctx, { x: bx, y, w: bw, h: bh }, { label: t('dom.copy'), tone: 'primary', action: () => this.copyInvite() });
+        }
+        y += bh + 16;
+        this.uiButton(ctx, { x: bx, y, w: half, h: bh }, solo);
+        this.uiButton(ctx, { x: bx + half + 12, y, w: half, h: bh }, cancel);
+      } else {
+        this.uiButton(ctx, { x: bx, y, w: bw, h: bh }, solo);
+        y += bh + 16;
+        this.uiButton(ctx, { x: bx, y, w: bw, h: bh }, cancel);
+      }
     }
     if (stage === 'error') {
       // токен жив, только если комната не ответила: после отказа хоста ломиться туда же незачем
@@ -2717,6 +2811,9 @@ class Game {
       label: t(this.level ? 'ui.quitLevel' : 'ui.menu'),
       action: () => (this.level ? this.openMap() : this.openMenu()),
     });
+    if (this.level) {
+      this.uiButton(ctx, { x: bx, y: h * 0.44 + (bh + 12) * 2, w: bw, h: bh }, { label: t('ui.menu'), action: () => this.openMenu() });
+    }
   }
 
   draw() {
@@ -2755,6 +2852,7 @@ class Game {
 
     this.drawTrajectory(ctx);
     this.drawPull(ctx);
+    this.drawThrowHint(ctx);
     for (const player of this.activePlayers) {
       player.draw(ctx, this.activePlayers.length > 1);
     }
@@ -2867,8 +2965,9 @@ class Game {
     this.canvas.height = CONFIG.height * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.canvas.style.aspectRatio = CONFIG.width + ' / ' + CONFIG.height;
-    // в приложении поле тянем почти во весь экран, на сайте оставляем место под подсказки
-    const frame = document.body.classList.contains('app') ? 92 : 74;
+    // на площадке поле во весь iframe, в приложении почти во весь экран, на сайте место под подсказки
+    const body = document.body.classList;
+    const frame = body.contains('portal') ? 100 : body.contains('app') ? 92 : 74;
     this.canvas.style.width = 'min(100%, ' + ((CONFIG.width / CONFIG.height) * frame).toFixed(1) + 'vh)';
   }
 
@@ -2900,5 +2999,6 @@ class Game {
 // язык передетекчиваем: до инициализации облачное сохранение было недоступно
 CG.boot(() => {
   setLang(detectLang());
+  console.info('Fruit Smash v' + GAME_VERSION);
   window.game = new Game(document.getElementById('game'));
 });

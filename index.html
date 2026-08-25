@@ -42,6 +42,17 @@
 
   <script src="js/vendor/peerjs.min.js"></script>
   <script src="js/cg.js"></script>
+  <script>
+    // классы среды ставятся до создания игры: resize() читает их при первом же кадре.
+    // в обёртке Capacitor игра идёт как приложение: подсказки про мышь не нужны, поле шире
+    if (window.Capacitor) {
+      document.body.classList.add('app');
+    }
+    // на площадке игра живёт в iframe: поле во весь кадр, кооп-кнопки рисуются на нём
+    if (CG.onPortal) {
+      document.body.classList.add('portal');
+    }
+  </script>
   <script src="js/i18n.js"></script>
   <script src="js/config.js"></script>
   <script src="js/utils.js"></script>
@@ -53,10 +64,6 @@
   <script src="js/entities.js"></script>
   <script src="js/game.js"></script>
   <script>
-    // в обёртке Capacitor игра идёт как приложение: подсказки про мышь не нужны, поле шире
-    if (window.Capacitor) {
-      document.body.classList.add('app');
-    }
     // офлайн-режим включается только на сайте: из file:// service worker не регистрируется,
     // а в сборке для CrazyGames файла sw.js просто нет
     if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !CG.onPortal) {

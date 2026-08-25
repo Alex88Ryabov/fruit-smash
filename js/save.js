@@ -53,6 +53,11 @@ class Save {
     return this.data.runs;
   }
 
+  // ни пройденного уровня, ни забега: игру открыли впервые
+  get fresh() {
+    return this.totalStars() === 0 && this.data.runs.length === 0;
+  }
+
   addXp(amount) {
     this.data.xp += amount;
     this.write();

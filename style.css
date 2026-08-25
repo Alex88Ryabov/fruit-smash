@@ -152,8 +152,11 @@ canvas {
   .lobby button, .lobby input { font-size: 13px; padding: 7px 12px; }
 }
 
-/* мобильное приложение: подсказки для мыши и клавиатуры там ни к чему */
-body.app .hint {
+/* мобильное приложение: подсказки для мыши и клавиатуры там ни к чему.
+   площадка (iframe CrazyGames): ни подсказок, ни HTML-лобби — кооп-кнопки рисуются на поле */
+body.app .hint,
+body.portal .hint,
+body.portal .lobby {
   display: none;
 }
 
@@ -162,12 +165,19 @@ body.app .wrap {
   gap: 6px;
 }
 
-/* в приложении поле без веб-рамки: скруглений и тени быть не должно */
-body.app canvas {
+body.portal .wrap {
+  padding: 0;
+  gap: 0;
+}
+
+/* в приложении и на площадке поле без веб-рамки: скруглений и тени быть не должно */
+body.app canvas,
+body.portal canvas {
   border-radius: 0;
   box-shadow: none;
 }
 
-body.app {
+body.app,
+body.portal {
   background: #1b1436;
 }
