@@ -1,0 +1,12 @@
+{
+  "name": "fruktolet-sprites",
+  "private": true,
+  "description": "Рендер спрайтов фруктов из моделей Kenney Food Kit",
+  "scripts": {
+    "render": "node render.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1",
+    "three": "^0.185.1"
+  }
+}

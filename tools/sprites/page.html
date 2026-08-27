@@ -1,0 +1,270 @@
+<!doctype html>
+<meta charset="utf-8">
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+<canvas id="gl" width="512" height="512"></canvas>
+<canvas id="out"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const RENDER = 512;
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setSize(RENDER, RENDER, false);
+renderer.setClearColor(0x000000, 0);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;
+const loader = new GLTFLoader();
+const cache = new Map();
+
+function loadGltf(url) {
+  if (!cache.has(url)) {
+    cache.set(url, new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject)));
+  }
+  return cache.get(url);
+}
+
+function hex(c) {
+  return parseInt(c.slice(1), 16);
+}
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) { return [0, 0, l]; }
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  if (max === r) { h = (g - b) / d + (g < b ? 6 : 0); }
+  else if (max === g) { h = (b - r) / d + 2; }
+  else { h = (r - g) / d + 4; }
+  return [h * 60, s, l];
+}
+
+function hslToRgb(h, s, l) {
+  h = ((h % 360) + 360) % 360 / 360;
+  if (s === 0) { return [l * 255, l * 255, l * 255]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const f = (t) => {
+    t = ((t % 1) + 1) % 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
+}
+
+// копия атласа с заменой цветов: [{from, to, tol}] точечно или [{hue, range, toHue, sat, light}] по тону
+function recolorTexture(tex, swaps) {
+  const img = tex.image;
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  const data = g.getImageData(0, 0, c.width, c.height);
+  const d = data.data;
+  for (const s of swaps) {
+    if (s.hue !== undefined) {
+      for (let i = 0; i < d.length; i += 4) {
+        const [h, sat, l] = rgbToHsl(d[i], d[i + 1], d[i + 2]);
+        let diff = Math.abs(((h - s.hue) % 360 + 540) % 360 - 180);
+        if (diff <= s.range && sat > 0.15) {
+          const rgb = hslToRgb(s.toHue + (h - s.hue), sat * (s.sat ?? 1), Math.min(1, l * (s.light ?? 1)));
+          d[i] = rgb[0]; d[i + 1] = rgb[1]; d[i + 2] = rgb[2];
+        }
+      }
+      continue;
+    }
+    const f = hex(s.from);
+    const fr = (f >> 16) & 255, fg = (f >> 8) & 255, fb = f & 255;
+    const t = hex(s.to);
+    const tr = (t >> 16) & 255, tg = (t >> 8) & 255, tb = t & 255;
+    const tol = s.tol || 8;
+    for (let i = 0; i < d.length; i += 4) {
+      if (Math.abs(d[i] - fr) <= tol && Math.abs(d[i + 1] - fg) <= tol && Math.abs(d[i + 2] - fb) <= tol) {
+        d[i] = tr; d[i + 1] = tg; d[i + 2] = tb;
+      }
+    }
+  }
+  g.putImageData(data, 0, 0);
+  const out = new THREE.CanvasTexture(c);
+  out.colorSpace = tex.colorSpace;
+  out.flipY = tex.flipY;
+  out.magFilter = THREE.NearestFilter;
+  out.minFilter = THREE.NearestFilter;
+  out.needsUpdate = true;
+  return out;
+}
+
+window.paletteOf = async function (url) {
+  const gltf = await loadGltf(url);
+  const colors = new Set();
+  gltf.scene.traverse((o) => {
+    if (o.isMesh) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (m.map && m.map.image) {
+          const img = m.map.image;
+          const c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          const g = c.getContext('2d');
+          g.drawImage(img, 0, 0);
+          const d = g.getImageData(0, 0, c.width, c.height).data;
+          for (let i = 0; i < d.length; i += 4) {
+            colors.add('#' + ((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]).toString(16).padStart(6, '0'));
+          }
+        } else {
+          colors.add('mat:' + m.color.getHexString());
+        }
+      }
+    }
+  });
+  return [...colors];
+};
+
+// какие цвета атласа реально видны на модели: рендер без света, точные цвета
+async function visibleColors(scene, camera) {
+  renderer.render(scene, camera);
+  const c = document.createElement('canvas');
+  c.width = RENDER; c.height = RENDER;
+  const g = c.getContext('2d');
+  g.drawImage(canvas, 0, 0);
+  const d = g.getImageData(0, 0, RENDER, RENDER).data;
+  const count = new Map();
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] > 250) {
+      const k = '#' + ((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]).toString(16).padStart(6, '0');
+      count.set(k, (count.get(k) || 0) + 1);
+    }
+  }
+  return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+}
+
+window.renderModel = async function (spec) {
+  const gltf = await loadGltf(spec.url);
+  const root = gltf.scene.clone(true);
+  const scene = new THREE.Scene();
+  const swaps = spec.swaps || [];
+  root.traverse((o) => {
+    if (o.isMesh) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const cloned = mats.map((m) => {
+        const mm = spec.unlit ? new THREE.MeshBasicMaterial({ map: m.map, color: m.color }) : m.clone();
+        if (mm.map && swaps.length) {
+          mm.map = recolorTexture(mm.map, swaps);
+        }
+        if (spec.flat && !spec.unlit) {
+          mm.flatShading = true;
+          mm.needsUpdate = true;
+        }
+        return mm;
+      });
+      o.material = Array.isArray(o.material) ? cloned : cloned[0];
+    }
+  });
+  if (spec.scale) {
+    root.scale.set(spec.scale[0], spec.scale[1], spec.scale[2]);
+  }
+  if (spec.spin) {
+    root.rotation.set(THREE.MathUtils.degToRad(spec.spin[0] || 0), THREE.MathUtils.degToRad(spec.spin[1] || 0), THREE.MathUtils.degToRad(spec.spin[2] || 0));
+  }
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  const center = box.getCenter(new THREE.Vector3());
+  root.position.sub(center);
+  root.updateMatrixWorld(true);
+  scene.add(root);
+
+  const elev = THREE.MathUtils.degToRad(spec.elev ?? 22);
+  const azim = THREE.MathUtils.degToRad(spec.azim ?? -30);
+  const dir = new THREE.Vector3(Math.sin(azim) * Math.cos(elev), Math.sin(elev), Math.cos(azim) * Math.cos(elev));
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
+  camera.position.copy(dir.clone().multiplyScalar(10));
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+  // вписываем проекцию бокса в кадр с полем
+  const b2 = new THREE.Box3().setFromObject(root);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < 8; i++) {
+    const p = new THREE.Vector3(i & 1 ? b2.max.x : b2.min.x, i & 2 ? b2.max.y : b2.min.y, i & 4 ? b2.max.z : b2.min.z);
+    p.applyMatrix4(camera.matrixWorldInverse);
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  const half = Math.max(maxX - minX, maxY - minY) / 2 * 1.12;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  camera.left = cx - half; camera.right = cx + half; camera.top = cy + half; camera.bottom = cy - half;
+  camera.updateProjectionMatrix();
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7aa0, spec.hemi ?? 1.9));
+  const sun = new THREE.DirectionalLight(0xfff4e0, spec.sun ?? 2.2);
+  sun.position.set(-3, 6, 5);
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xc0d0ff, 0.5);
+  fill.position.set(4, 1, -3);
+  scene.add(fill);
+
+  if (spec.probe) {
+    return { colors: await visibleColors(scene, camera) };
+  }
+  renderer.render(scene, camera);
+
+  // обрезка по альфе, обводка, уменьшение до нужного размера
+  const src = document.createElement('canvas');
+  src.width = RENDER; src.height = RENDER;
+  const sg = src.getContext('2d');
+  sg.drawImage(canvas, 0, 0);
+  const d = sg.getImageData(0, 0, RENDER, RENDER).data;
+  let x0 = RENDER, y0 = RENDER, x1 = -1, y1 = -1;
+  for (let y = 0; y < RENDER; y++) {
+    for (let x = 0; x < RENDER; x++) {
+      if (d[(y * RENDER + x) * 4 + 3] > 8) {
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+  }
+  const size = spec.size || 256;
+  const outline = spec.outline ?? 10;
+  const k = size / Math.max(x1 - x0 + 1, y1 - y0 + 1);
+  const w = Math.round((x1 - x0 + 1) * k);
+  const h = Math.round((y1 - y0 + 1) * k);
+  const out = document.getElementById('out');
+  out.width = w + outline * 2;
+  out.height = h + outline * 2;
+  const og = out.getContext('2d');
+  og.imageSmoothingQuality = 'high';
+  // уменьшенная копия
+  const small = document.createElement('canvas');
+  small.width = w; small.height = h;
+  const smg = small.getContext('2d');
+  smg.imageSmoothingQuality = 'high';
+  smg.drawImage(src, x0, y0, x1 - x0 + 1, y1 - y0 + 1, 0, 0, w, h);
+  if (outline > 0) {
+    const sil = document.createElement('canvas');
+    sil.width = w; sil.height = h;
+    const g = sil.getContext('2d');
+    g.drawImage(small, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = spec.outlineColor || '#271d33';
+    g.fillRect(0, 0, w, h);
+    const steps = 32;
+    for (let r = outline; r > 0; r -= 1.5) {
+      for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        og.drawImage(sil, outline + Math.cos(a) * r, outline + Math.sin(a) * r);
+      }
+    }
+  }
+  og.drawImage(small, outline, outline);
+  return { dataUrl: out.toDataURL('image/png'), w: out.width, h: out.height };
+};
+window.ready = true;
+</script>

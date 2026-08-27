@@ -48,21 +48,6 @@ function round1(v) {
   return Math.round(v * 10) / 10;
 }
 
-// эмодзи рисуем как обычный текст: так работает на любой машине без спрайтов
-function drawEmoji(ctx, emoji, x, y, size, rotation = 0, alpha = 1) {
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.translate(x, y);
-  ctx.rotate(rotation);
-  // цветной глиф берёт альфу из fillStyle: если до этого рисовали полупрозрачным, эмодзи выцветает
-  ctx.fillStyle = '#000000';
-  ctx.font = size + 'px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(emoji, 0, 0);
-  ctx.restore();
-}
-
 function drawSeed(ctx, x, y, r, rotation, color = '#5b3a1e') {
   ctx.save();
   ctx.translate(x, y);

@@ -162,7 +162,7 @@ class Projectile {
       ctx.fill();
       ctx.restore();
     }
-    drawEmoji(ctx, this.weapon.emoji, this.x, this.y, this.weapon.size, this.rot);
+    drawSprite(ctx, this.weapon.sprite, this.x, this.y, this.weapon.size, this.rot);
   }
 }
 
@@ -310,7 +310,7 @@ class Hazard {
     }
 
     if (this.kind === 'peel') {
-      drawEmoji(ctx, '🍌', this.x, this.y - 8, 34, this.landed ? Math.PI * 0.92 : this.rot);
+      drawSprite(ctx, 'banana', this.x, this.y - 8, 34, this.landed ? Math.PI * 0.92 : this.rot);
       return;
     }
 
@@ -394,7 +394,11 @@ class Pickup {
     ctx.fill();
     ctx.restore();
 
-    drawEmoji(ctx, this.type.emoji, this.x, y, 34);
+    if (this.type.weapon) {
+      drawSprite(ctx, WEAPONS[this.type.weapon].sprite, this.x, y, 36);
+    } else {
+      drawBadge(ctx, this.type.icon, this.x, y, 17, this.type.color);
+    }
   }
 }
 
@@ -404,7 +408,7 @@ class Enemy {
     this.type = type;
     this.r = type.radius;
     this.size = type.size;
-    this.emoji = type.emoji;
+    this.sprite = type.sprite;
     this.hunted = false;
     this.hp = type.hp + this.bonusHp(type, wave, difficulty);
     this.maxHp = this.hp;
@@ -437,7 +441,7 @@ class Enemy {
     if (type.key === 'boss') {
       return Math.floor(wave / CONFIG.bossEvery - 1) * 8 + difficulty.hpBonus * 2;
     }
-    if (type.key === 'berry' || type.key === 'mango') {
+    if (type.key === 'berry' || type.key === 'pear') {
       return 0;
     }
     return difficulty.hpBonus;
@@ -527,9 +531,9 @@ class Enemy {
   draw(ctx) {
     const squash = 1 + Math.sin(this.t * 9) * 0.05;
 
-    if (this.type.key === 'mango' || this.isBoss) {
+    if (this.type.key === 'pear' || this.isBoss) {
       const glow = ctx.createRadialGradient(this.x, this.y, this.r * 0.3, this.x, this.y, this.r * 1.9);
-      glow.addColorStop(0, this.type.key === 'mango' ? 'rgba(255,215,0,.55)' : 'rgba(193,18,31,.45)');
+      glow.addColorStop(0, this.type.key === 'pear' ? 'rgba(255,215,0,.55)' : 'rgba(193,18,31,.45)');
       glow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = glow;
       ctx.beginPath();
@@ -563,14 +567,14 @@ class Enemy {
       ctx.arc(this.x, this.y, this.r + 14 + Math.sin(this.t * 6) * 3, 0, TAU);
       ctx.stroke();
       ctx.restore();
-      drawEmoji(ctx, '🎯', this.x - this.r * 0.9, this.y - this.r * 0.85, 22, Math.sin(this.t * 5) * 0.2);
+      drawIcon(ctx, 'target', this.x - this.r * 0.9, this.y - this.r * 0.85, 22, '#ff4d6d', Math.sin(this.t * 5) * 0.2);
     }
 
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.wobble);
     ctx.scale(squash, 2 - squash);
-    drawEmoji(ctx, this.emoji, 0, 0, this.size);
+    drawSprite(ctx, this.sprite, 0, 0, this.size);
     if (this.flash > 0) {
       ctx.globalAlpha = (this.flash / 0.12) * 0.7;
       ctx.fillStyle = '#fff';
@@ -592,15 +596,15 @@ class Enemy {
     }
 
     if (this.type.marker && !this.hunted) {
-      drawEmoji(ctx, this.type.marker, this.x + this.r * 0.9, this.y - this.r * 0.85, 22, Math.sin(this.t * 5) * 0.2);
+      drawIcon(ctx, this.type.marker, this.x + this.r * 0.9, this.y - this.r * 0.85, 22, '#ffd166', Math.sin(this.t * 5) * 0.2);
     }
 
-    if (this.type.key === 'mango') {
-      drawEmoji(ctx, '👑', this.x, this.y - this.r - 12, 26, Math.sin(this.t * 4) * 0.2);
+    if (this.type.key === 'pear') {
+      drawIcon(ctx, 'crown', this.x, this.y - this.r - 12, 26, '#ffd166', Math.sin(this.t * 4) * 0.2);
     }
 
     if (this.isBoss) {
-      drawEmoji(ctx, '👑', this.x, this.y - this.r - 26, 52, Math.sin(this.t * 3) * 0.15);
+      drawIcon(ctx, 'crown', this.x, this.y - this.r - 26, 52, '#ffd166', Math.sin(this.t * 3) * 0.15);
       const w = 160;
       const h = 12;
       const x = this.x - w / 2;
@@ -873,7 +877,7 @@ class Player {
       if (mirror) {
         ctx.scale(-1, 1);
       }
-      drawEmoji(ctx, this.weapon.emoji, 0, 0, this.weapon.size * 0.62,
+      drawSprite(ctx, this.weapon.sprite, 0, 0, this.weapon.size * 0.62,
         mirror ? -(arm.fore + Math.PI / 2) : arm.fore + Math.PI / 2);
       ctx.restore();
     }
@@ -1127,7 +1131,7 @@ class Player {
 
   draw(ctx, showName = false) {
     if (!this.alive) {
-      drawEmoji(ctx, '💤', this.x, this.y - 30, 34, Math.sin(performance.now() / 400) * 0.2, 0.8);
+      drawIcon(ctx, 'heart-broken', this.x, this.y - 30, 30, '#ff4d6d', Math.sin(performance.now() / 400) * 0.2, 0.8);
       return;
     }
 
@@ -1219,8 +1223,12 @@ class Player {
       ctx.restore();
     }
 
+    // на кожуре над головой кружат звёздочки
     if (this.slip > 0) {
-      drawEmoji(ctx, '💫', this.x, baseY - 156, 26, Math.sin(this.slip * 10) * 0.4);
+      for (let i = 0; i < 3; i++) {
+        const a = this.slip * 9 + (i * TAU) / 3;
+        drawIcon(ctx, 'star', this.x + Math.cos(a) * 24, baseY - 158 + Math.sin(a) * 7, 15, '#ffd166', a);
+      }
     }
 
     if (showName) {

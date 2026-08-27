@@ -27,7 +27,7 @@ Keep hitting and the rage meter fills: your hero bursts into flames, the charge 
 • Three stars per level: clear it, take no damage, complete the special goal
 • Endless mode with a boss every fifth wave
 • Upgrades between runs: hearts, reload speed, pickup magnet, starting weapon
-• Weapons that change everything: nuts, corn machine gun, exploding pineapple, homing carrot
+• Weapons that change everything: mushroom spread shot, corn machine gun, exploding pineapple, homing carrot
 • Ranks and a high score table to climb
 • Co-op for up to 4 friends: one link and they land straight in your game
 • English, Russian and Ukrainian

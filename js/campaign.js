@@ -1,13 +1,13 @@
 const LEVELS_PER_GARDEN = 12;
 
-// сады кампании: своя палитра, свой набор фруктов, свой модификатор среды и свой босс
+// сады кампании: своя палитра, свой набор фруктов, свой модификатор среды и свой босс.
+// спрайт босса заодно служит эмблемой сада на карте
 const GARDENS = [
   {
     key: 'apple',
-    icon: '🍎',
     pool: ['apple', 'cherry', 'grape'],
     modifier: 'breeze',
-    boss: { emoji: '🍎' },
+    boss: { sprite: 'apple' },
     palette: {
       skyTop: '#4a8fd4', skyBottom: '#ffe6a7', hillFar: '#6fb872',
       hillNear: '#3f7d4c', ground: '#2f5c3c', groundTop: '#5fa168',
@@ -15,10 +15,9 @@ const GARDENS = [
   },
   {
     key: 'citrus',
-    icon: '🍊',
-    pool: ['lemon', 'orange', 'kiwi', 'apple'],
+    pool: ['lemon', 'orange', 'avocado', 'apple'],
     modifier: 'puddles',
-    boss: { emoji: '🍊' },
+    boss: { sprite: 'orange' },
     palette: {
       skyTop: '#3b2f7a', skyBottom: '#f0a3c0', hillFar: '#4a3a86',
       hillNear: '#2f2560', ground: '#3d2a52', groundTop: '#6b4a86',
@@ -26,10 +25,9 @@ const GARDENS = [
   },
   {
     key: 'tropic',
-    icon: '🥥',
     pool: ['banana', 'coconut', 'watermelon', 'cherry'],
     modifier: 'rain',
-    boss: { emoji: '🥥' },
+    boss: { sprite: 'coconut' },
     palette: {
       skyTop: '#12343b', skyBottom: '#5b8f8f', hillFar: '#1d5450',
       hillNear: '#123a38', ground: '#0f2c2e', groundTop: '#2c6b63',
@@ -37,10 +35,9 @@ const GARDENS = [
   },
   {
     key: 'berry',
-    icon: '🫐',
-    pool: ['blueberry', 'cherry', 'kiwi', 'grape'],
+    pool: ['blueberry', 'cherry', 'avocado', 'grape'],
     modifier: 'night',
-    boss: { emoji: '🍓' },
+    boss: { sprite: 'strawberry' },
     palette: {
       skyTop: '#0b0f2b', skyBottom: '#33215c', hillFar: '#281c52',
       hillNear: '#170f36', ground: '#120c2a', groundTop: '#3a2a63',
@@ -48,10 +45,9 @@ const GARDENS = [
   },
   {
     key: 'royal',
-    icon: '👑',
-    pool: ['apple', 'lemon', 'orange', 'banana', 'coconut', 'blueberry', 'watermelon', 'kiwi'],
+    pool: ['apple', 'lemon', 'orange', 'banana', 'coconut', 'blueberry', 'watermelon', 'avocado'],
     modifier: 'rotten',
-    boss: { emoji: '🍉' },
+    boss: { sprite: 'watermelon' },
     palette: {
       skyTop: '#4a1f4d', skyBottom: '#ffb86b', hillFar: '#7a3b6b',
       hillNear: '#4d2347', ground: '#3a1a38', groundTop: '#8a4a6b',
@@ -95,23 +91,24 @@ const OBJECTIVE_ORDER = [
 
 // звания: очки капают за пройденные уровни и забеги бесконечного режима, звание навсегда
 const RANKS = [
-  { key: 'seed', emoji: '🌱', need: 0 },
-  { key: 'thrower', emoji: '🪃', need: 150 },
-  { key: 'sniper', emoji: '🎯', need: 400 },
-  { key: 'ace', emoji: '🥇', need: 800 },
-  { key: 'storm', emoji: '🌪️', need: 1400 },
-  { key: 'legend', emoji: '👑', need: 2200 },
+  { key: 'seed', need: 0 },
+  { key: 'thrower', need: 150 },
+  { key: 'sniper', need: 400 },
+  { key: 'ace', need: 800 },
+  { key: 'storm', need: 1400 },
+  { key: 'legend', need: 2200 },
 ];
 
+// icon — значок из art/icons в списке улучшений
 const UPGRADES = {
-  heart: { key: 'heart', emoji: '❤️', costs: [60, 150, 320] },
-  reload: { key: 'reload', emoji: '⚡', costs: [50, 130, 280] },
-  drop: { key: 'drop', emoji: '🎁', costs: [70, 170, 350] },
-  magnet: { key: 'magnet', emoji: '🧲', costs: [40, 110, 240] },
-  start: { key: 'start', emoji: '🎒', costs: [90, 220, 460] },
+  heart: { key: 'heart', icon: 'heart', costs: [60, 150, 320] },
+  reload: { key: 'reload', icon: 'fast-forward', costs: [50, 130, 280] },
+  drop: { key: 'drop', icon: 'pouch', costs: [70, 170, 350] },
+  magnet: { key: 'magnet', icon: 'hand', costs: [40, 110, 240] },
+  start: { key: 'start', icon: 'basket', costs: [90, 220, 460] },
 };
 
-const START_WEAPONS = ['potato', 'nuts', 'corn', 'pineapple'];
+const START_WEAPONS = ['potato', 'mushroom', 'corn', 'pineapple'];
 
 function levelId(gardenIndex, levelIndex) {
   return (gardenIndex + 1) + '-' + (levelIndex + 1);
@@ -175,7 +172,7 @@ function buildLevelQueue(plan) {
   if (plan.boss) {
     queue.unshift({ type: ENEMY_TYPES.boss, hunted: false, skin: plan.garden.boss });
   } else if (Math.random() < 0.25) {
-    queue.splice(randInt(0, queue.length), 0, { type: ENEMY_TYPES.mango, hunted: false });
+    queue.splice(randInt(0, queue.length), 0, { type: ENEMY_TYPES.pear, hunted: false });
   }
   return queue;
 }

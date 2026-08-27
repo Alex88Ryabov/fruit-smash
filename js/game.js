@@ -45,7 +45,7 @@ function buildWave(wave, difficulty) {
     add(ENEMY_TYPES.banana, 2);
   }
   if (wave >= 4) {
-    add(ENEMY_TYPES.kiwi, 2);
+    add(ENEMY_TYPES.avocado, 2);
     add(ENEMY_TYPES.orange, 2);
   }
   if (wave >= 5) {
@@ -58,7 +58,7 @@ function buildWave(wave, difficulty) {
     queue.push({ type: pick(pool), hunted: false });
   }
   if (Math.random() < 0.3 + wave * 0.03) {
-    queue.splice(randInt(0, queue.length), 0, { type: ENEMY_TYPES.mango, hunted: false });
+    queue.splice(randInt(0, queue.length), 0, { type: ENEMY_TYPES.pear, hunted: false });
   }
   if (wave % CONFIG.bossEvery === 0) {
     queue.unshift({ type: ENEMY_TYPES.boss, hunted: false });
@@ -1185,7 +1185,7 @@ class Game {
     enemy.id = this.nextId++;
     enemy.hunted = Boolean(entry.hunted);
     if (entry.skin) {
-      enemy.emoji = entry.skin.emoji;
+      enemy.sprite = entry.skin.sprite;
     }
     this.enemies.push(enemy);
     return enemy;
@@ -1216,7 +1216,7 @@ class Game {
     if (enemy.isBoss && !this.level) {
       CG.happytime();
     }
-    this.fx(enemy.type.key === 'mango' ? 'gold' : 'kill', enemy.x, enemy.y, enemy.type.tint);
+    this.fx(enemy.type.key === 'pear' ? 'gold' : 'kill', enemy.x, enemy.y, enemy.type.tint);
     this.say(enemy.x, enemy.y, '+' + formatScore(gained), enemy.type.tint, enemy.isBoss ? 40 : 26);
     this.dropPickups(enemy);
     if (owner) {
@@ -1966,11 +1966,11 @@ class Game {
       roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 12);
       ctx.fill();
       const icon = key === 'jump'
-        ? '⬆️'
+        ? 'arrow-up'
         : key === 'pause'
-          ? (this.mode === MODE.paused ? '▶️' : '⏸️')
-          : (this.sound.muted ? '🔇' : '🔊');
-      drawEmoji(ctx, icon, rect.x + rect.w / 2, rect.y + rect.h / 2, 24);
+          ? (this.mode === MODE.paused ? 'play' : 'pause')
+          : (this.sound.muted ? 'sound-off' : 'sound-on');
+      drawIcon(ctx, icon, rect.x + rect.w / 2, rect.y + rect.h / 2, 24, PALETTE.hud);
     }
     ctx.restore();
   }
@@ -2107,7 +2107,7 @@ class Game {
     roundRect(ctx, x, y, 250, 54, 12);
     ctx.fill();
 
-    drawEmoji(ctx, player.weapon.emoji, x + 30, y + 27, 34);
+    drawSprite(ctx, player.weapon.sprite, x + 30, y + 27, 36);
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -2166,7 +2166,7 @@ class Game {
       const offset = roster.length > 1 ? 52 : 36;
       const heart = roster.length > 2 ? 17 : 21;
       for (let h = 0; h < player.maxHp; h++) {
-        drawEmoji(ctx, h < player.hp ? '❤️' : '🖤', offset + h * (heart + 4), y, heart);
+        drawIcon(ctx, 'heart', offset + h * (heart + 4), y, heart, h < player.hp ? '#ff4d6d' : 'rgba(255,255,255,.25)');
       }
     });
 
@@ -2225,7 +2225,7 @@ class Game {
     const rageY = 96 + roster.length * rowStep + 2;
     const rageK = ragePlayer.raging ? ragePlayer.rageTimer / CONFIG.rageTime : ragePlayer.rage;
     ctx.save();
-    drawEmoji(ctx, '🔥', 33, rageY + 5, ragePlayer.raging ? 21 : 17);
+    drawIcon(ctx, 'fire', 33, rageY + 5, ragePlayer.raging ? 21 : 17, ragePlayer.raging ? '#ffd166' : '#ff7b2d');
     ctx.fillStyle = 'rgba(10,8,23,.45)';
     roundRect(ctx, 46, rageY, 110, 10, 5);
     ctx.fill();
@@ -2240,10 +2240,10 @@ class Game {
 
     const effects = [];
     if (this.localPlayer.shield) {
-      effects.push({ emoji: '🛡️', text: t('hud.shield') });
+      effects.push({ icon: 'shield', color: '#4ecdc4', text: t('hud.shield') });
     }
     if (this.slowTimer > 0) {
-      effects.push({ emoji: '⏳', text: this.slowTimer.toFixed(1) + 's' });
+      effects.push({ icon: 'hourglass', color: '#8ecbff', text: this.slowTimer.toFixed(1) + 's' });
     }
     ctx.save();
     ctx.textAlign = 'left';
@@ -2251,7 +2251,7 @@ class Game {
     ctx.font = '600 16px "Segoe UI", system-ui, sans-serif';
     effects.forEach((effect, i) => {
       const y = rageY + 24 + i * 28;
-      drawEmoji(ctx, effect.emoji, 36, y, 22);
+      drawIcon(ctx, effect.icon, 36, y, 22, effect.color);
       ctx.fillStyle = PALETTE.hud;
       ctx.fillText(effect.text, 54, y + 1);
     });
@@ -2281,6 +2281,14 @@ class Game {
     ctx.textBaseline = opts.baseline || 'middle';
     ctx.fillText(value, x, y);
     ctx.restore();
+  }
+
+  textWidth(ctx, value, size, weight = 700) {
+    ctx.save();
+    ctx.font = weight + ' ' + size + 'px "Segoe UI", system-ui, sans-serif';
+    const width = ctx.measureText(value).width;
+    ctx.restore();
+    return width;
   }
 
   // кнопка рисуется и тут же попадает в список кликабельных зон текущего кадра
@@ -2350,7 +2358,12 @@ class Game {
     const h = CONFIG.height;
     const portrait = CONFIG.layout === 'portrait';
     this.dim(ctx);
-    this.text(ctx, t('ui.title'), w / 2, h * 0.2, { size: portrait ? 40 : 58, color: '#ffd166' });
+    const titleSize = portrait ? 40 : 58;
+    this.text(ctx, t('ui.title'), w / 2, h * 0.2, { size: titleSize, color: '#ffd166' });
+    // по бокам заголовка — картошка, которой бросают, и арбуз, которого сбивают
+    const titleHalf = this.textWidth(ctx, t('ui.title'), titleSize) / 2 + titleSize * 0.8;
+    drawSprite(ctx, 'potato', w / 2 - titleHalf, h * 0.2, titleSize * 1.1, -0.35);
+    drawSprite(ctx, 'watermelon', w / 2 + titleHalf, h * 0.2, titleSize * 1.1, 0.25);
     this.text(ctx, t('ui.tagline'), w / 2, h * 0.27, { size: portrait ? 17 : 22, weight: 600 });
 
     const stage = this.coopStage();
@@ -2386,13 +2399,13 @@ class Game {
     });
     this.uiButton(ctx, { x: bx + half + 12, y: h * 0.42 + (bh + 16) * 2, w: half, h: bh }, {
       label: t('ui.records'),
-      sub: RANKS[this.save.rankIndex()].emoji + ' ' + t('rank.' + RANKS[this.save.rankIndex()].key),
+      sub: t('rank.' + RANKS[this.save.rankIndex()].key),
       action: () => { this.mode = MODE.records; },
     });
     // на площадке HTML-лобби скрыто, приглашение создаётся кнопкой на поле
     if (CG.onPortal) {
       this.uiButton(ctx, { x: bx, y: h * 0.42 + (bh + 16) * 3, w: bw, h: 48 }, {
-        label: '🤝 ' + t('dom.invite'),
+        label: t('dom.invite'),
         size: 17,
         action: () => this.net.invite(),
       });
@@ -2407,7 +2420,7 @@ class Game {
     const index = this.save.rankIndex();
     const rank = RANKS[index];
     const next = RANKS[index + 1];
-    this.text(ctx, rank.emoji + ' ' + t('rank.' + rank.key), cx, cy, { size: 20, color: '#ffd166' });
+    this.text(ctx, t('rank.' + rank.key), cx, cy, { size: 20, color: '#ffd166' });
     if (!next) {
       return;
     }
@@ -2507,7 +2520,10 @@ class Game {
     const open = this.save.gardenOpen(gardenIndex);
     this.dim(ctx, 0.55);
 
-    this.text(ctx, garden.icon + ' ' + t('garden.' + garden.key), w / 2, h * 0.11, { size: portrait ? 28 : 36, color: '#ffd166' });
+    const title = t('garden.' + garden.key);
+    const titleSize = portrait ? 28 : 36;
+    this.text(ctx, title, w / 2, h * 0.11, { size: titleSize, color: '#ffd166' });
+    drawSprite(ctx, garden.boss.sprite, w / 2 - this.textWidth(ctx, title, titleSize) / 2 - titleSize * 0.8, h * 0.11, titleSize * 1.2);
     this.text(ctx, open ? t('ui.modifier', { name: t('mod.' + garden.key) }) : t('ui.gardenLocked'),
       w / 2, h * 0.16, { size: portrait ? 15 : 18, weight: 600, color: open ? 'rgba(255,243,214,.75)' : '#ff7591' });
     this.text(ctx, t('ui.starsOf', { n: this.save.gardenStars(gardenIndex), max: LEVELS_PER_GARDEN * 3 }),
@@ -2552,9 +2568,13 @@ class Game {
       ctx.restore();
 
       if (!unlocked) {
-        drawEmoji(ctx, '🔒', cx, cy, size * 0.4);
+        drawIcon(ctx, 'lock', cx, cy, size * 0.4, 'rgba(255,243,214,.45)');
       } else {
-        this.text(ctx, boss ? '👑' : String(i + 1), cx, cy - size * 0.06, { size: size * (boss ? 0.42 : 0.36) });
+        if (boss) {
+          drawIcon(ctx, 'crown', cx, cy - size * 0.06, size * 0.42, '#ffd166');
+        } else {
+          this.text(ctx, String(i + 1), cx, cy - size * 0.06, { size: size * 0.36 });
+        }
         this.drawStars(ctx, cx, cy + size * 0.34, stars, size * 0.17);
         this.ui.push({
           rect: { x: cx - size / 2, y: cy - size / 2, w: size, h: size },
@@ -2609,7 +2629,7 @@ class Game {
       ctx.fill();
       ctx.restore();
 
-      drawEmoji(ctx, upgrade.emoji, x + 34, y + rowH / 2, 28);
+      drawIcon(ctx, upgrade.icon, x + 34, y + rowH / 2, 28, '#ffd166');
       this.text(ctx, t('upg.' + key), x + 62, y + rowH * 0.34, { size: 16, align: 'left' });
       this.text(ctx, t('upgDesc.' + key), x + 62, y + rowH * 0.66, { size: 13, weight: 600, align: 'left', color: 'rgba(255,243,214,.6)' });
 
@@ -2624,7 +2644,7 @@ class Game {
 
       const affordable = cost !== null && this.save.seeds >= cost;
       this.uiButton(ctx, { x: x + rowW - 108, y: y + rowH / 2 - 20, w: 96, h: 40 }, {
-        label: cost === null ? t('ui.max') : cost + ' 🌱',
+        label: cost === null ? t('ui.max') : String(cost),
         size: 15,
         tone: affordable ? 'primary' : 'normal',
         disabled: !affordable,
@@ -2661,7 +2681,7 @@ class Game {
       this.text(ctx, result.reason, w / 2, h * 0.35, { size: 18, weight: 600, color: '#ff7591' });
     }
     if (success && result.rankUp) {
-      this.text(ctx, '🎖 ' + t('ui.newRank', { name: result.rankUp.emoji + ' ' + t('rank.' + result.rankUp.key) }),
+      this.text(ctx, t('ui.newRank', { name: t('rank.' + result.rankUp.key) }),
         w / 2, h * 0.34, { size: 17, color: '#ffd166' });
     }
 
@@ -2712,10 +2732,10 @@ class Game {
         w / 2, h * 0.49, { size: 19, color: '#c0f36b' });
     }
     if (this.lastPlace > 0) {
-      this.text(ctx, '🏆 ' + t('ui.tablePlace', { n: this.lastPlace }), w / 2, h * 0.53, { size: 17, color: '#8ef6c5' });
+      this.text(ctx, t('ui.tablePlace', { n: this.lastPlace }), w / 2, h * 0.53, { size: 17, color: '#8ef6c5' });
     }
     if (this.rankUp) {
-      this.text(ctx, '🎖 ' + t('ui.newRank', { name: this.rankUp.emoji + ' ' + t('rank.' + this.rankUp.key) }),
+      this.text(ctx, t('ui.newRank', { name: t('rank.' + this.rankUp.key) }),
         w / 2, h * 0.565, { size: 17, color: '#ffd166' });
     }
 
@@ -2754,7 +2774,7 @@ class Game {
       const fresh = this.lastPlace > 0 && i === this.lastPlace - 1;
       const color = fresh ? '#8ef6c5' : PALETTE.hud;
       if (i < 3) {
-        drawEmoji(ctx, ['🥇', '🥈', '🥉'][i], left + 14, y, 24);
+        drawIcon(ctx, 'medal', left + 14, y, 24, ['#ffd166', '#c9d1d9', '#d69a63'][i]);
       } else {
         this.text(ctx, String(i + 1), left + 14, y, { size: 16, color: 'rgba(255,243,214,.6)' });
       }
@@ -2782,7 +2802,7 @@ class Game {
     roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 12);
     ctx.fill();
     ctx.restore();
-    drawEmoji(ctx, this.sound.muted ? '🔇' : '🔊', rect.x + size / 2, rect.y + size / 2, 24);
+    drawIcon(ctx, this.sound.muted ? 'sound-off' : 'sound-on', rect.x + size / 2, rect.y + size / 2, 24, PALETTE.hud);
     this.ui.push({
       rect,
       action: () => {
