@@ -1,0 +1,229 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><base href="/"><style>body{margin:0;background:#333}canvas{display:block;margin:8px}</style></head>
+<body>
+<!-- стенд обложек для CrazyGames: три холста снимает shoot-covers.js -->
+<canvas id="land" width="1920" height="1080"></canvas>
+<canvas id="port" width="800" height="1200"></canvas>
+<canvas id="sq" width="800" height="800"></canvas>
+<script src="/js/cg.js"></script>
+<script src="/js/i18n.js"></script>
+<script src="/js/config.js"></script>
+<script src="/js/utils.js"></script>
+<script src="/js/campaign.js"></script>
+<script src="/js/art.js"></script>
+<script src="/js/sprites.js"></script>
+<script src="/js/entities.js"></script>
+<script>
+applyLayout('landscape');
+const DT = 1 / 60;
+
+// герой в позе броска: замах устаканился, бросок только что ушёл — рука со шлейфом
+function makeHero() {
+  const p = new Player(0);
+  p.x = 0;
+  p.y = 0;
+  p.aim = -0.42;
+  p.charging = true;
+  p.charge = 1;
+  for (let k = 0; k < 45; k++) {
+    p.update(DT, 0);
+    p.animate(DT);
+  }
+  p.charging = false;
+  p.throwAnim = 1;
+  for (let k = 0; k < 4; k++) {
+    p.update(DT, 0);
+    p.animate(DT);
+  }
+  // update кламит x к краю поля — возвращаем героя в начало координат
+  p.x = 0;
+  p.setMood('happy', 9);
+  return p;
+}
+
+function sky(ctx, w, h, groundY) {
+  const g = ctx.createLinearGradient(0, 0, 0, groundY);
+  g.addColorStop(0, '#4a8fd4');
+  g.addColorStop(1, '#ffe6a7');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, groundY);
+  // солнце
+  ctx.fillStyle = 'rgba(255,236,170,.9)';
+  ctx.beginPath();
+  ctx.arc(w * 0.86, h * 0.13, Math.min(w, h) * 0.075, 0, TAU);
+  ctx.fill();
+  // облака
+  ctx.fillStyle = 'rgba(255,255,255,.75)';
+  for (const [cx, cy, s] of [[w * 0.16, h * 0.16, 1.5], [w * 0.55, h * 0.09, 1.1], [w * 0.78, h * 0.30, 0.9]]) {
+    const r = Math.min(w, h) * 0.035 * s;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, TAU);
+    ctx.arc(cx + r * 1.15, cy + r * 0.25, r * 0.78, 0, TAU);
+    ctx.arc(cx - r * 1.05, cy + r * 0.3, r * 0.66, 0, TAU);
+    ctx.fill();
+  }
+  // холмы
+  for (const layer of [{ c: '#6fb872', k: 0.16, o: 0 }, { c: '#3f7d4c', k: 0.09, o: 140 }]) {
+    ctx.fillStyle = layer.c;
+    ctx.beginPath();
+    ctx.moveTo(0, groundY);
+    for (let x = 0; x <= w; x += 24) {
+      ctx.lineTo(x, groundY - h * layer.k - Math.sin((x + layer.o) * 0.004) * h * 0.05);
+    }
+    ctx.lineTo(w, groundY);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = '#2f5c3c';
+  ctx.fillRect(0, groundY, w, h - groundY);
+  ctx.fillStyle = '#5fa168';
+  ctx.fillRect(0, groundY, w, h * 0.012);
+}
+
+// летающий фрукт: крылья как в игре
+function fruit(ctx, sprite, x, y, size, flap, rot) {
+  const r = size * 0.47;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.scale(side, 1);
+    ctx.rotate(-0.5 + flap);
+    ctx.beginPath();
+    ctx.ellipse(r * 0.95, -r * 0.15, r * 0.75, r * 0.3, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+  drawSprite(ctx, sprite, x, y, size, rot || 0);
+}
+
+// фрукт, в который прилетело: кольцо, брызги и капли
+function splash(ctx, x, y, scale, tint) {
+  ctx.save();
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 7 * scale;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.arc(x, y, 52 * scale, 0, TAU);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = tint;
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * TAU + 0.35;
+    const d = (62 + (i % 3) * 22) * scale;
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, (7 + (i % 3) * 3.5) * scale, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+  drawDroplet(ctx, x + 40 * scale, y + 55 * scale, 13 * scale, tint);
+  drawDroplet(ctx, x - 52 * scale, y + 30 * scale, 10 * scale, tint);
+}
+
+// картошка в полёте со следом
+function shot(ctx, x, y, size, angle) {
+  ctx.save();
+  for (let i = 5; i >= 1; i--) {
+    ctx.globalAlpha = 0.09 * i;
+    ctx.fillStyle = '#c0f36b';
+    ctx.beginPath();
+    ctx.arc(x - Math.cos(angle) * i * size * 0.55, y - Math.sin(angle) * i * size * 0.55, size * (0.5 - i * 0.055), 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+  drawSprite(ctx, 'potato', x, y, size, angle + Math.PI / 2);
+}
+
+function hero(ctx, p, x, groundAt, scale) {
+  const g = CONFIG.groundY;
+  CONFIG.groundY = 0;
+  ctx.save();
+  ctx.translate(x, groundAt);
+  ctx.scale(scale, scale);
+  p.draw(ctx, false);
+  ctx.restore();
+  CONFIG.groundY = g;
+}
+
+function title(ctx, x, y, size, lines) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-0.035);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '900 ' + size + 'px "Segoe UI", "Arial Black", sans-serif';
+  lines.forEach((line, i) => {
+    const ly = i * size * 1.02;
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = size * 0.18;
+    ctx.strokeStyle = '#2a1b3d';
+    ctx.strokeText(line, 0, ly);
+    const g = ctx.createLinearGradient(0, ly - size * 0.5, 0, ly + size * 0.5);
+    g.addColorStop(0, '#ffe08a');
+    g.addColorStop(1, '#ffb703');
+    ctx.fillStyle = g;
+    ctx.fillText(line, 0, ly);
+  });
+  ctx.restore();
+}
+
+function render() {
+  const p = makeHero();
+
+  // левый верхний угол площадка закрывает своими плашками — держим его пустым:
+  // название уходит вправо, герой стоит слева внизу
+
+  // --- 1920x1080 ---
+  let ctx = document.getElementById('land').getContext('2d');
+  sky(ctx, 1920, 1080, 985);
+  title(ctx, 1195, 200, 168, ['FRUIT SMASH']);
+  fruit(ctx, 'cherry', 980, 430, 170, -0.1, -0.12);
+  fruit(ctx, 'watermelon', 1520, 610, 280, 0.25, 0.1);
+  fruit(ctx, 'lemon', 1730, 880, 165, 0.35, 0.15);
+  fruit(ctx, 'apple', 1150, 700, 200, 0.05, -0.05);
+  splash(ctx, 1150, 700, 1.2, '#ff5d5d');
+  shot(ctx, 855, 605, 110, 0.3);
+  hero(ctx, p, 430, 985, 4.35);
+
+  // --- 800x1200 ---
+  ctx = document.getElementById('port').getContext('2d');
+  sky(ctx, 800, 1200, 1120);
+  title(ctx, 455, 235, 118, ['FRUIT', 'SMASH']);
+  fruit(ctx, 'cherry', 145, 430, 135, -0.1, -0.12);
+  fruit(ctx, 'watermelon', 205, 650, 195, 0.25, 0.1);
+  fruit(ctx, 'apple', 660, 470, 155, 0.05, -0.05);
+  splash(ctx, 660, 470, 1.0, '#ff5d5d');
+  fruit(ctx, 'lemon', 715, 960, 120, 0.35, 0.15);
+  shot(ctx, 570, 625, 95, -0.95);
+  hero(ctx, p, 420, 1120, 3.4);
+
+  // --- 800x800 ---
+  ctx = document.getElementById('sq').getContext('2d');
+  sky(ctx, 800, 800, 745);
+  title(ctx, 510, 155, 92, ['FRUIT', 'SMASH']);
+  fruit(ctx, 'cherry', 140, 300, 125, -0.1, -0.12);
+  fruit(ctx, 'watermelon', 665, 415, 165, 0.25, 0.1);
+  fruit(ctx, 'apple', 645, 595, 140, 0.05, -0.05);
+  splash(ctx, 645, 595, 0.82, '#ff5d5d');
+  shot(ctx, 487, 487, 78, 0.5);
+  hero(ctx, p, 330, 745, 2.9);
+
+  window.__done = true;
+}
+
+function artReady() {
+  return HERO_ART.ready && Object.values(ART.sprites).every(loaded);
+}
+
+function waitArt() {
+  if (artReady()) {
+    render();
+  } else {
+    setTimeout(waitArt, 30);
+  }
+}
+waitArt();
+</script>
+</body></html>

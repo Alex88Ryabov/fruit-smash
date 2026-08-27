@@ -2,7 +2,7 @@
 
 ## CrazyGames: шаг Details
 
-Материалы лежат в `store/crazygames/`, собираются скриптами из игры (обложки — стенд `covers.html`, ролики — `record-video.js`).
+Материалы лежат в `store/crazygames/`, собираются скриптами из `tools/store/` (обложки — `node store/shoot-covers.js`, ролики — `node store/record-video.js landscape|portrait`; запускать из папки `tools` после `npm install`, ролику нужен ffmpeg).
 
 | Поле | Что ставить |
 | --- | --- |

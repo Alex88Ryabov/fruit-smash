@@ -1,0 +1,14 @@
+{
+  "name": "fruktolet-tools",
+  "private": true,
+  "description": "Инструменты: рендер спрайтов из моделей Kenney, обложки и ролики для площадок",
+  "scripts": {
+    "sprites": "node sprites/render.js",
+    "covers": "node store/shoot-covers.js",
+    "video": "node store/record-video.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1",
+    "three": "^0.185.1"
+  }
+}

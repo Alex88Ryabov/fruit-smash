@@ -6,6 +6,7 @@ class SoundBox {
     this.muted = CG.store().getItem('fruktolet.muted') === '1';
     // площадка (CrazyGames) может глушить звук своим тумблером; он сильнее внутриигрового
     this.portalMuted = false;
+    this.music = new Music(this);
   }
 
   get silent() {
@@ -34,6 +35,7 @@ class SoundBox {
     this.master = this.ctx.createGain();
     this.master.connect(this.ctx.destination);
     this.applyVolume();
+    this.music.start();
   }
 
   toggleMute() {

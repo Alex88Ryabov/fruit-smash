@@ -2170,42 +2170,62 @@ class Game {
       }
     });
 
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.font = '700 22px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = PALETTE.hud;
-    ctx.fillText(this.level ? t('hud.level', { g: this.level.gardenIndex + 1, l: this.level.levelIndex + 1 }) : t('hud.wave', { n: this.wave }),
-      CONFIG.width - 24, 22);
-
-    ctx.font = '600 16px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(255,243,214,.7)';
+    // правая колонка: строки собираем заранее, чтобы подложить под них плашку —
+    // без неё текст терялся на солнце и облаках
+    const big = '700 22px "Segoe UI", system-ui, sans-serif';
+    const small = '600 16px "Segoe UI", system-ui, sans-serif';
+    const dim = 'rgba(255,243,214,.7)';
     const dir = this.wind > 8 ? '→' : this.wind < -8 ? '←' : '·';
-    ctx.fillText(t('hud.wind', { dir, n: Math.abs(Math.round(this.wind)) }), CONFIG.width - 24, 52);
-    ctx.fillText(t('hud.left', { n: this.queue.length + this.enemies.length }), CONFIG.width - 24, 74);
+    const rows = [
+      {
+        text: this.level ? t('hud.level', { g: this.level.gardenIndex + 1, l: this.level.levelIndex + 1 }) : t('hud.wave', { n: this.wave }),
+        font: big, y: 22, color: PALETTE.hud,
+      },
+      { text: t('hud.wind', { dir, n: Math.abs(Math.round(this.wind)) }), font: small, y: 52, color: dim },
+      { text: t('hud.left', { n: this.queue.length + this.enemies.length }), font: small, y: 74, color: dim },
+    ];
+    if (this.objective) {
+      rows.push({ text: this.objectiveText(), font: small, y: 118, color: '#8ef6c5' });
+    }
+    if (this.role !== 'solo') {
+      rows.push({
+        text: t(this.role === 'host' ? 'hud.host' : 'hud.guest'),
+        font: small, y: this.objective ? 140 : 118, color: this.net.connected ? '#8ef6c5' : '#ff4d6d',
+      });
+    }
 
-    // звёзды сложности: погасшие рисуем отдельным цветом, иначе они неотличимы
+    // звёзды сложности: погасшие рисуем отдельным цветом, иначе они неотличимы;
+    // в узком кадре подпись не влезает — оставляем одни звёзды
     const filled = '★'.repeat(this.difficulty.stars);
     const empty = '★'.repeat(5 - this.difficulty.stars);
+    const label = CONFIG.layout === 'portrait' ? '' : t('hud.difficulty') + ' ';
+    ctx.font = small;
+    const emptyWidth = ctx.measureText(empty).width;
+    const filledWidth = ctx.measureText(filled).width;
+    let panelWidth = ctx.measureText(label).width + filledWidth + emptyWidth;
+    for (const row of rows) {
+      ctx.font = row.font;
+      panelWidth = Math.max(panelWidth, ctx.measureText(row.text).width);
+    }
+    const bottom = Math.max(96, rows[rows.length - 1].y) + 30;
+    ctx.fillStyle = 'rgba(10,8,23,.45)';
+    roundRect(ctx, CONFIG.width - 38 - panelWidth, 12, panelWidth + 28, bottom - 12, 12);
+    ctx.fill();
+
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    for (const row of rows) {
+      ctx.font = row.font;
+      ctx.fillStyle = row.color;
+      ctx.fillText(row.text, CONFIG.width - 24, row.y);
+    }
+    ctx.font = small;
     ctx.fillStyle = 'rgba(255,255,255,.22)';
     ctx.fillText(empty, CONFIG.width - 24, 96);
-    const emptyWidth = ctx.measureText(empty).width;
     ctx.fillStyle = '#ffd166';
     ctx.fillText(filled, CONFIG.width - 24 - emptyWidth, 96);
-    // в узком кадре подпись не влезает — оставляем одни звёзды
-    if (CONFIG.layout !== 'portrait') {
-      ctx.fillStyle = 'rgba(255,243,214,.7)';
-      ctx.fillText(t('hud.difficulty'), CONFIG.width - 30 - emptyWidth - ctx.measureText(filled).width, 96);
-    }
-
-    if (this.objective) {
-      ctx.fillStyle = '#8ef6c5';
-      ctx.fillText(this.objectiveText(), CONFIG.width - 24, 118);
-    }
-
-    if (this.role !== 'solo') {
-      ctx.fillStyle = this.net.connected ? '#8ef6c5' : '#ff4d6d';
-      ctx.fillText(t(this.role === 'host' ? 'hud.host' : 'hud.guest'), CONFIG.width - 24, this.objective ? 140 : 118);
-    }
+    ctx.fillStyle = dim;
+    ctx.fillText(label, CONFIG.width - 24 - emptyWidth - filledWidth, 96);
 
     if (this.combo >= CONFIG.comboStep) {
       ctx.textAlign = 'center';
@@ -2296,7 +2316,8 @@ class Game {
     const disabled = Boolean(opts.disabled);
     const primary = opts.tone === 'primary';
     ctx.save();
-    ctx.fillStyle = disabled ? 'rgba(255,255,255,.06)' : (primary ? '#4ecdc4' : 'rgba(10,8,23,.62)');
+    // кнопки непрозрачные: сквозь полупрозрачные просвечивал герой, стоящий за меню
+    ctx.fillStyle = disabled ? '#1c1834' : (primary ? '#4ecdc4' : '#110e24');
     roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 14);
     ctx.fill();
     if (!primary) {
@@ -3000,8 +3021,10 @@ class Game {
       this.cgLoaded = true;
       CG.loadingStop();
     }
-    // геймплей для площадки — бой и заставка волны; меню, пауза и итоги — перерыв
+    // геймплей для площадки — бой и заставка волны; меню, пауза и итоги — перерыв.
+    // музыка живёт по тому же делению: в бою полный состав, иначе тихая подложка
     const playing = this.mode === MODE.playing || this.mode === MODE.banner;
+    this.sound.music.setScene(playing ? 'play' : 'calm');
     if (playing !== this.cgPlaying) {
       this.cgPlaying = playing;
       if (playing) {

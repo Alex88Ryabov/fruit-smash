@@ -1,0 +1,275 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><base href="/">
+<!-- стенд ролика для CrazyGames: игра во весь кадр с автопилотом, пишет record-video.js -->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  .wrap { padding: 0 !important; gap: 0 !important; height: 100%; }
+  .hint, .lobby { display: none !important; }
+  canvas {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    aspect-ratio: auto !important;
+  }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <canvas id="game" width="960" height="600"></canvas>
+    <div id="lobby" class="lobby">
+      <button id="btn-invite"></button>
+      <input id="join-input">
+      <button id="btn-join"></button>
+      <div id="invite-box"><input id="invite-value"><button id="btn-share"></button><button id="btn-copy"></button><button id="btn-cancel"></button></div>
+      <p id="net-status"></p>
+    </div>
+  </main>
+
+<script src="/js/cg.js"></script>
+<script src="/js/i18n.js"></script>
+<script src="/js/config.js"></script>
+<script>
+// кадр под видео: 16:9 для альбома и 2:3 для портрета — иначе по краям чёрные поля,
+// а их площадка запрещает. геометрия боя не меняется, поле просто шире
+LAYOUTS.landscape.width = 1067;
+LAYOUTS.portrait.width = 853;
+applyLayout('landscape');
+// отрисовка идёт в двойном разрешении: видео пишется с уменьшением, картинка резче
+Object.defineProperty(window, 'devicePixelRatio', { get: () => 2 });
+</script>
+<script src="/js/utils.js"></script>
+<script src="/js/campaign.js"></script>
+<script src="/js/save.js"></script>
+<script src="/js/audio.js"></script>
+<script src="/js/music.js"></script>
+<script src="/js/net.js"></script>
+<script src="/js/art.js"></script>
+<script src="/js/sprites.js"></script>
+<script src="/js/entities.js"></script>
+<script src="/js/game.js"></script>
+<script>
+// ---------- автопилот: целится по баллистике с упреждением на ход фрукта и ветер ----------
+function aimAt(game, player, enemy) {
+  const weapon = player.weapon;
+  const speed = lerp(CONFIG.minThrowSpeed, CONFIG.maxThrowSpeed, easeOutCubic(1))
+    * weapon.speedMul * (1 + (player.level - 1) * 0.06);
+  const g = CONFIG.gravity * weapon.gravityMul;
+  const origin = player.aimOrigin;
+  const diving = enemy.mode === 'dive';
+  const evx = diving ? enemy.dvx : enemy.dir * enemy.speed;
+  const evy = diving ? enemy.dvy : 0;
+  let flight = 0;
+  let angle = null;
+  for (let step = 0; step < 4; step++) {
+    // куда фрукт долетит за время полёта, минус снос снаряда ветром
+    const tx = enemy.x + evx * flight - 0.5 * game.wind * flight * flight;
+    const ty = enemy.y + evy * flight;
+    const dx = tx - origin.x;
+    const dy = ty - origin.y;
+    const side = dx < 0 ? -1 : 1;
+    const adx = Math.max(1, Math.abs(dx));
+    const a = (g * adx * adx) / (2 * speed * speed);
+    const b = adx;
+    const c = a - dy;
+    const d = b * b - 4 * a * c;
+    if (d < 0) {
+      return null;
+    }
+    const root = Math.sqrt(d);
+    let best = null;
+    for (const u of [(-b + root) / (2 * a), (-b - root) / (2 * a)]) {
+      const theta = Math.atan(u);
+      const t = adx / (speed * Math.cos(theta));
+      if (t > 0 && (!best || t < best.t)) {
+        best = { theta, t };
+      }
+    }
+    if (!best) {
+      return null;
+    }
+    flight = best.t;
+    angle = side > 0 ? best.theta : Math.PI - best.theta;
+  }
+  return angle;
+}
+
+function nearestEnemy(game, player) {
+  let best = null;
+  let bestScore = Infinity;
+  for (const enemy of game.enemies) {
+    if (enemy.dead || enemy.shieldOn) {
+      continue;
+    }
+    // ближние и те, что ещё не улетели за край, интереснее
+    const score = Math.hypot(enemy.x - player.x, enemy.y - player.y) + (enemy.isBoss ? -200 : 0);
+    if (score < bestScore) {
+      bestScore = score;
+      best = enemy;
+    }
+  }
+  return best;
+}
+
+function installBot(game) {
+  let phase = 0;
+  let charging = false;
+  let last = performance.now();
+  let lastJump = 0;
+  game.localInput = () => {
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const player = game.localPlayer;
+    const enemy = nearestEnemy(game, player);
+    const aim = enemy ? aimAt(game, player, enemy) : null;
+
+    // идём к бонусу, если он лежит рядом, иначе неспешно бродим — герой не стоит столбом
+    let move = 0;
+    const pickup = game.pickups.find((item) => Math.abs(item.x - player.x) > 26);
+    if (pickup) {
+      move = Math.sign(pickup.x - player.x);
+    } else {
+      const drift = Math.sin(now / 3000);
+      move = Math.abs(drift) > 0.45 ? Math.sign(drift) : 0;
+    }
+
+    // прыжок от того, что летит в голову, и просто раз в несколько секунд для живости
+    let jump = false;
+    const danger = game.hazards.some((h) => h.kind !== 'peel' && h.kind !== 'drip'
+      && Math.abs(h.x - player.x) < 70 && h.y > player.y - 220 && h.y < player.y - 40);
+    if (player.onGround && (danger || now - lastJump > 5200)) {
+      jump = true;
+      lastJump = now;
+    }
+
+    // в ярости кнопка просто зажата — очередь идёт сама
+    if (player.raging) {
+      charging = true;
+    } else {
+      phase += dt;
+      if (!charging && phase > 0.16) {
+        charging = true;
+        phase = 0;
+      } else if (charging && phase > 0.72) {
+        charging = false;
+        phase = 0;
+      }
+    }
+    return { m: move, tx: null, a: aim === null ? player.aim : aim, c: charging && Boolean(enemy), p: null, j: jump };
+  };
+}
+
+// ---------- запуск: сначала обложка кадром, потом бой ----------
+const cover = new Image();
+let coverReady = false;
+cover.onload = () => { coverReady = true; };
+cover.src = window.innerHeight > window.innerWidth
+  ? 'store/crazygames/cover-800x1200.png'
+  : 'store/crazygames/cover-1920x1080.png';
+
+// ---------- режиссёр: в кадре всё время полно фруктов, оружие меняется по расписанию ----------
+const CAST = ['apple', 'cherry', 'grape', 'lemon', 'banana', 'watermelon', 'avocado', 'orange', 'coconut', 'blueberry'];
+const QUEUE_MIN = 16;
+
+// в портрете поле вдвое выше, и та же горстка фруктов растекается по нему редкой сыпью
+function density() {
+  return CONFIG.layout === 'portrait' ? 11 : 7;
+}
+
+// секунды от начала боя: бонус кладём в стороне от героя, он идёт к нему и подбирает.
+// всё расписание должно уложиться в PLAY_TIME — площадка режет ролик на двадцатой секунде
+const SCRIPT = [
+  { at: 2.2, pickup: 'mushroom' },
+  { at: 5.2, pickup: 'corn' },
+  { at: 7.6, gold: true },
+  { at: 9.2, pickup: 'pineapple' },
+  { at: 11.4, boss: true },
+  { at: 12.4, rage: true },
+  { at: 15.4, pickup: 'carrot' },
+  { at: 17.2, pickup: 'wrench' },
+];
+
+function dropNear(game, key) {
+  const player = game.localPlayer;
+  const side = player.x > CONFIG.width / 2 ? -1 : 1;
+  const pickup = new Pickup(PICKUP_TYPES[key], clamp(player.x + side * 150, 60, CONFIG.width - 60), CONFIG.groundY - 190);
+  pickup.id = game.nextId++;
+  game.pickups.push(pickup);
+}
+
+window.__startRun = () => {
+  const game = window.game;
+  game.showCover = false;
+  game.startGame();
+  // со сбитых фруктов падают только эффекты: случайное оружие ломало бы порядок показа
+  const dropAll = game.dropPickups.bind(game);
+  game.dropPickups = (enemy) => {
+    const before = game.pickups.length;
+    dropAll(enemy);
+    game.pickups = game.pickups.filter((item, i) => i < before || !item.type.weapon);
+  };
+  // фрукты идут чаще и не кончаются: волна не сменяется, а значит нет и пустого экрана
+  game.difficulty.spawnInterval = 0.45;
+  const started = performance.now();
+  let step = 0;
+  let cast = 0;
+  const nextType = () => ENEMY_TYPES[CAST[cast++ % CAST.length]];
+
+  const tick = () => {
+    const time = (performance.now() - started) / 1000;
+    while (game.queue.length < QUEUE_MIN) {
+      game.queue.push({ type: nextType(), hunted: false });
+    }
+    while (game.enemies.length < density()) {
+      game.spawnEnemy(nextType());
+    }
+    while (step < SCRIPT.length && SCRIPT[step].at <= time) {
+      const cue = SCRIPT[step];
+      step += 1;
+      if (cue.pickup) {
+        dropNear(game, cue.pickup);
+      }
+      if (cue.gold) {
+        game.spawnEnemy(ENEMY_TYPES.pear);
+      }
+      if (cue.boss) {
+        game.spawnEnemy(ENEMY_TYPES.boss);
+      }
+      if (cue.rage) {
+        game.localPlayer.rage = 0.99;
+      }
+    }
+    // получить по голове в ролике не страшно, а умереть посреди записи — да
+    if (game.localPlayer.hp < 2) {
+      game.localPlayer.hp = game.localPlayer.maxHp;
+    }
+    requestAnimationFrame(tick);
+  };
+  tick();
+};
+
+function boot() {
+  const game = window.game;
+  if (!game || !HERO_ART.ready || !coverReady || !Object.values(ART.sprites).every(loaded)) {
+    setTimeout(boot, 40);
+    return;
+  }
+  setLang('en');
+  game.sound.muted = true;
+  game.showCover = true;
+  installBot(game);
+  const base = game.draw.bind(game);
+  // до старта на холсте держим обложку: первый кадр ролика — она
+  game.draw = () => {
+    base();
+    if (game.showCover) {
+      game.ctx.drawImage(cover, 0, 0, CONFIG.width, CONFIG.height);
+    }
+  };
+  window.__ready = true;
+}
+boot();
+</script>
+</body></html>
