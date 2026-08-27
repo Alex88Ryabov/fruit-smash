@@ -1,7 +1,7 @@
 {
   "name": "fruktolet",
-  "version": "1.12.0",
-  "description": "Р¤СЂСѓРєС‚РѕР»С‘С‚ вЂ” Р°СЂРєР°РґР° РЅР° canvas",
+  "version": "1.12.1",
+  "description": "Р В¤РЎР‚РЎС“Р С”РЎвЂљР С•Р В»РЎвЂРЎвЂљ РІР‚вЂќ Р В°РЎР‚Р С”Р В°Р Т‘Р В° Р Р…Р В° canvas",
   "scripts": {
     "www": "node build-www.js",
     "crazygames": "node build-crazygames.js",

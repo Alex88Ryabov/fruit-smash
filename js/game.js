@@ -766,16 +766,24 @@ class Game {
     return input;
   }
 
-  // прыжок, пауза и звук прямо на поле: без них на телефоне до них не добраться
+  // прыжок, пауза и звук прямо на поле: без них на телефоне до них не добраться.
+  // раскладка идёт от правого края влево, между кнопками всегда один и тот же зазор
   buttonRects() {
     const size = 46;
     const pad = 12;
+    const jumpWidth = size + 12;
     const y = CONFIG.height - size - pad;
-    return {
-      pause: { x: CONFIG.width - pad - size, y, w: size, h: size },
-      mute: { x: CONFIG.width - pad * 2 - size * 2, y, w: size, h: size },
-      jump: { x: CONFIG.width - pad * 3 - size * 3, y, w: size + 12, h: size },
-    };
+    const rects = {};
+    let right = CONFIG.width - pad;
+    // в коопе партия идёт у всех сразу, остановить её нельзя — и кнопки паузы там нет
+    if (this.role === 'solo') {
+      rects.pause = { x: right - size, y, w: size, h: size };
+      right -= size + pad;
+    }
+    rects.mute = { x: right - size, y, w: size, h: size };
+    right -= size + pad;
+    rects.jump = { x: right - jumpWidth, y, w: jumpWidth, h: size };
+    return rects;
   }
 
   tapButton(p) {
@@ -783,7 +791,7 @@ class Game {
       return false;
     }
     const rects = this.buttonRects();
-    const inside = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+    const inside = (r) => r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
     if (inside(rects.jump)) {
       this.jumpQueued = true;
       return true;
@@ -2495,6 +2503,11 @@ class Game {
     if (stage === 'connect') {
       this.text(ctx, t('ui.coopConnectHint'), w / 2, h * 0.545,
         { size: portrait ? 15 : 18, weight: 600, color: 'rgba(255,243,214,.75)' });
+    }
+    // соединение идёт через чужой сервер, и он видит IP — игрок должен знать об этом до входа
+    if (stage !== 'error') {
+      this.text(ctx, t('ui.coopPrivacy'), w / 2, h * 0.625,
+        { size: portrait ? 11 : 13, weight: 600, color: 'rgba(255,243,214,.45)' });
     }
 
     const bw = Math.min(400, w * 0.76);
